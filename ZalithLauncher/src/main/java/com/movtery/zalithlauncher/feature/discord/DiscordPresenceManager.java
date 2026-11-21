@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -45,7 +46,7 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
 /**
- * Manages Discord account linking and Rich Presence ("Playing Gurkha Launcher",
+ * Manages Discord account linking and Rich Presence ("Playing Orbit Launcher",
  * Application ID 1571705435713437726) over the Discord Gateway v10 WebSocket
  * with cross-process persistence between :launcher and :game processes.
  */
@@ -68,11 +69,16 @@ public final class DiscordPresenceManager {
     private static final MediaType JSON_MEDIA = MediaType.parse("application/json; charset=utf-8");
 
     private static final Pattern SEQ_PATTERN = Pattern.compile("\"s\"\\s*:\\s*(\\d+)");
-    private static final Pattern OP_PATTERN = Pattern.compile("\"op\"\\s*:\\s*(\\d+)");
     private static final Pattern TYPE_PATTERN = Pattern.compile("\"t\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern SESSION_ID_PATTERN = Pattern.compile("\"session_id\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern RESUME_URL_PATTERN = Pattern.compile("\"resume_gateway_url\"\\s*:\\s*\"([^\"]+)\"");
 
     public interface StatusListener {
         void onDiscordStatusChanged(@NonNull String summary, boolean connected);
+    }
+
+    public interface TokenVerifyCallback {
+        void onResult(boolean valid, @NonNull String userId, @NonNull String username, @NonNull String token);
     }
 
     private static volatile DiscordPresenceManager sInstance;
@@ -100,6 +106,8 @@ public final class DiscordPresenceManager {
     private volatile ScheduledFuture<?> mHeartbeatFuture;
     private volatile ScheduledFuture<?> mReconnectFuture;
     private volatile Integer mLastSequence = null;
+    private volatile String mSessionId = "";
+    private volatile String mResumeGatewayUrl = "";
     private volatile boolean mConnected = false;
     private volatile boolean mConnecting = false;
     private volatile String mLastError = "";
@@ -117,7 +125,7 @@ public final class DiscordPresenceManager {
                 .pingInterval(25, TimeUnit.SECONDS)
                 .build();
         mScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "GurkhaDiscordRPC");
+            Thread t = new Thread(r, "OrbitDiscordRPC");
             t.setDaemon(true);
             return t;
         });
@@ -165,6 +173,15 @@ public final class DiscordPresenceManager {
         }
     }
 
+    private synchronized void clearInvalidToken(@NonNull String errorMessage) {
+        mLastError = errorMessage;
+        mSessionId = "";
+        mResumeGatewayUrl = "";
+        mLastSequence = null;
+        mPrefs.edit().remove(KEY_TOKEN).commit();
+        persistToDiskFile();
+    }
+
     public boolean isEnabled() {
         return mPrefs.getBoolean(KEY_ENABLED, true);
     }
@@ -198,7 +215,11 @@ public final class DiscordPresenceManager {
 
     @NonNull
     public String getToken() {
-        return normalizeToken(mPrefs.getString(KEY_TOKEN, ""));
+        String raw = normalizeToken(mPrefs.getString(KEY_TOKEN, ""));
+        if (!raw.isEmpty() && !looksLikeDiscordToken(raw)) {
+            return "";
+        }
+        return raw;
     }
 
     @NonNull
@@ -259,10 +280,12 @@ public final class DiscordPresenceManager {
             cleanIdOrName = cleanIdOrName.substring(1).trim();
         }
         String cleanToken = normalizeToken(rawToken);
-        // If the user pasted a Discord token into the ID/Login field, detect and use it automatically
         if (cleanToken.isEmpty() && looksLikeDiscordToken(cleanIdOrName)) {
             cleanToken = normalizeToken(cleanIdOrName);
             cleanIdOrName = getLinkedUserId();
+        }
+        if (!cleanToken.isEmpty() && !looksLikeDiscordToken(cleanToken)) {
+            cleanToken = "";
         }
         if (cleanToken.isEmpty()) {
             cleanToken = getToken();
@@ -271,6 +294,7 @@ public final class DiscordPresenceManager {
         String cleanStatus = ("idle".equals(onlineStatus) || "dnd".equals(onlineStatus)) ? onlineStatus : "online";
         String cleanCustomState = customState != null ? customState.trim() : "";
 
+        mLastError = "";
         SharedPreferences.Editor editor = mPrefs.edit()
                 .putString(KEY_USER_ID, cleanIdOrName)
                 .putString(KEY_TOKEN, cleanToken)
@@ -284,7 +308,7 @@ public final class DiscordPresenceManager {
         editor.commit();
         persistToDiskFile();
 
-        if (!cleanToken.isEmpty() && (cleanIdOrName.isEmpty() || getLinkedUsername().isEmpty())) {
+        if (!cleanToken.isEmpty()) {
             fetchDiscordIdentityAsync(cleanToken);
         }
 
@@ -322,6 +346,10 @@ public final class DiscordPresenceManager {
         String cleanToken = normalizeToken(sessionToken);
 
         mLastError = "";
+        mSessionId = "";
+        mResumeGatewayUrl = "";
+        mLastSequence = null;
+
         SharedPreferences.Editor editor = mPrefs.edit().putBoolean(KEY_ENABLED, true);
         if (!cleanId.isEmpty()) editor.putString(KEY_USER_ID, cleanId);
         if (!cleanUser.isEmpty()) editor.putString(KEY_USERNAME, cleanUser);
@@ -332,7 +360,7 @@ public final class DiscordPresenceManager {
         editor.commit();
         persistToDiskFile();
 
-        if (!cleanToken.isEmpty()) {
+        if (!cleanToken.isEmpty() && (cleanId.isEmpty() || cleanUser.isEmpty())) {
             fetchDiscordIdentityAsync(cleanToken);
         }
 
@@ -343,8 +371,59 @@ public final class DiscordPresenceManager {
         notifyListeners();
     }
 
+    public void verifyTokenAsync(@Nullable String rawToken, @NonNull TokenVerifyCallback callback) {
+        final String cleanToken = normalizeToken(rawToken);
+        if (!looksLikeDiscordToken(cleanToken)) {
+            mMainHandler.post(() -> callback.onResult(false, "", "", cleanToken));
+            return;
+        }
+        Request request = new Request.Builder()
+                .url(USER_ME_URL)
+                .header("Authorization", cleanToken)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .get()
+                .build();
+        mHttpClient.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                // If custom DNS or network blocks the REST check, allow the structurally valid token through to Gateway
+                final String extractedId = extractUserIdFromToken(cleanToken);
+                mMainHandler.post(() -> callback.onResult(true, extractedId, "", cleanToken));
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) {
+                try {
+                    int code = response.code();
+                    if (response.isSuccessful() && response.body() != null) {
+                        JSONObject user = new JSONObject(response.body().string());
+                        final String id = user.optString("id", "").trim();
+                        final String username = user.optString("username", "").trim();
+                        if (!id.isEmpty()) {
+                            mMainHandler.post(() -> callback.onResult(true, id, username, cleanToken));
+                            return;
+                        }
+                    }
+                    if (code == 401 || code == 403) {
+                        mMainHandler.post(() -> callback.onResult(false, "", "", cleanToken));
+                    } else {
+                        final String extractedId = extractUserIdFromToken(cleanToken);
+                        mMainHandler.post(() -> callback.onResult(true, extractedId, "", cleanToken));
+                    }
+                } catch (Throwable ignored) {
+                    mMainHandler.post(() -> callback.onResult(false, "", "", cleanToken));
+                } finally {
+                    response.close();
+                }
+            }
+        });
+    }
+
     public void unlink() {
         mLastError = "";
+        mSessionId = "";
+        mResumeGatewayUrl = "";
+        mLastSequence = null;
         mPrefs.edit()
                 .remove(KEY_USER_ID)
                 .remove(KEY_USERNAME)
@@ -391,15 +470,17 @@ public final class DiscordPresenceManager {
 
     public void updateActivity(@NonNull String details, @Nullable String state) {
         syncFromDiskFile();
-        mCurrentDetails = details;
+        mCurrentDetails = sanitizeRpcText(details);
         if (state != null && !state.trim().isEmpty()) {
-            mCurrentState = state.trim();
+            mCurrentState = sanitizeRpcText(state.trim());
         }
         if (!isEnabled() || !isConfigured()) {
             return;
         }
         connectIfNeeded();
-        sendPresenceUpdate();
+        if (mConnected) {
+            sendPresenceUpdate();
+        }
         broadcastLocalDiscordRpc();
     }
 
@@ -438,42 +519,69 @@ public final class DiscordPresenceManager {
             mReconnectFuture = null;
         }
         mConnecting = true;
+        mLastError = "";
         notifyListeners();
 
+        String targetUrl = (!mResumeGatewayUrl.isEmpty() && mLastSequence != null && !mSessionId.isEmpty())
+                ? mResumeGatewayUrl
+                : GATEWAY_URL;
+
         Request request = new Request.Builder()
-                .url(GATEWAY_URL)
+                .url(targetUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                 .build();
 
         mWebSocket = mHttpClient.newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
+                if (webSocket != mWebSocket) return;
                 Logging.i(TAG, "Discord Gateway WebSocket opened for app " + DISCORD_APPLICATION_ID);
             }
 
             @Override
             public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
+                if (webSocket != mWebSocket) return;
                 handleGatewayMessage(webSocket, text);
             }
 
             @Override
             public void onClosing(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
+                if (webSocket != mWebSocket) {
+                    try {
+                        webSocket.close(1000, null);
+                    } catch (Throwable ignored) {
+                    }
+                    return;
+                }
                 Logging.i(TAG, "Discord Gateway closing: " + code + " " + reason);
                 if (code == 4004) {
-                    mLastError = "Session expired — please sign in again";
+                    clearInvalidToken("Discord session expired — tap Sign in with Discord below");
                 }
-                webSocket.close(1000, null);
+                try {
+                    webSocket.close(1000, null);
+                } catch (Throwable ignored) {
+                }
             }
 
             @Override
             public void onClosed(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
-                handleSocketTerminated(code != 4004 && code != 1000);
+                if (webSocket != mWebSocket) return;
+                if (code == 4004) {
+                    clearInvalidToken("Discord session expired — tap Sign in with Discord below");
+                }
+                if (code == 4007 || code == 4009) {
+                    mSessionId = "";
+                    mResumeGatewayUrl = "";
+                    mLastSequence = null;
+                }
+                handleSocketTerminated(webSocket, code != 4004 && code != 4013 && code != 4014);
             }
 
             @Override
             public void onFailure(@NonNull WebSocket webSocket, @NonNull Throwable t, @Nullable Response response) {
+                if (webSocket != mWebSocket) return;
                 Logging.w(TAG, "Discord Gateway failure: " + t.getMessage());
-                handleSocketTerminated(true);
+                handleSocketTerminated(webSocket, true);
             }
         });
     }
@@ -487,20 +595,24 @@ public final class DiscordPresenceManager {
             mHeartbeatFuture.cancel(true);
             mHeartbeatFuture = null;
         }
-        if (mWebSocket != null) {
-            try {
-                mWebSocket.close(1000, "User disconnected");
-            } catch (Throwable ignored) {
-            }
-            mWebSocket = null;
-        }
+        WebSocket oldSocket = mWebSocket;
+        mWebSocket = null;
         mConnected = false;
         mConnecting = false;
         mLastSequence = null;
+        if (oldSocket != null) {
+            try {
+                oldSocket.close(1000, "User disconnected");
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
-    private void handleSocketTerminated(boolean shouldReconnect) {
+    private void handleSocketTerminated(@NonNull WebSocket webSocket, boolean shouldReconnect) {
         synchronized (this) {
+            if (mWebSocket != webSocket) {
+                return;
+            }
             if (mHeartbeatFuture != null) {
                 mHeartbeatFuture.cancel(true);
                 mHeartbeatFuture = null;
@@ -512,30 +624,35 @@ public final class DiscordPresenceManager {
                 if (mReconnectFuture != null) {
                     mReconnectFuture.cancel(false);
                 }
-                mReconnectFuture = mScheduler.schedule(this::connectIfNeeded, 5, TimeUnit.SECONDS);
+                mReconnectFuture = mScheduler.schedule(this::connectIfNeeded, 2, TimeUnit.SECONDS);
             }
         }
         notifyListeners();
     }
 
     private void handleGatewayMessage(@NonNull WebSocket webSocket, @NonNull String text) {
+        if (webSocket != mWebSocket) return;
         try {
-            // Fast path for huge READY / READY_SUPPLEMENTAL payloads (often 1-8 MB on user accounts)
+            // Fast path for large READY / READY_SUPPLEMENTAL payloads
             if (text.length() > 32768) {
-                String head = text.substring(0, 1024);
-                Matcher sm = SEQ_PATTERN.matcher(head);
+                int slice = Math.min(2048, text.length());
+                String headAndTail = text.substring(0, slice) + "\n" + text.substring(text.length() - slice);
+                Matcher sm = SEQ_PATTERN.matcher(headAndTail);
                 if (sm.find()) {
                     mLastSequence = Integer.parseInt(sm.group(1));
                 }
-                Matcher tm = TYPE_PATTERN.matcher(head);
+                Matcher tm = TYPE_PATTERN.matcher(headAndTail);
                 String eventType = tm.find() ? tm.group(1) : "";
-                if ("READY".equals(eventType)) {
-                    mConnected = true;
-                    mConnecting = false;
-                    mLastError = "";
-                    notifyListeners();
-                    sendPresenceUpdate();
-                    mScheduler.schedule(this::sendPresenceUpdate, 2, TimeUnit.SECONDS);
+                if ("READY".equals(eventType) || "RESUMED".equals(eventType) || text.contains("\"READY\"")) {
+                    Matcher sid = SESSION_ID_PATTERN.matcher(headAndTail);
+                    if (sid.find()) {
+                        mSessionId = sid.group(1);
+                    }
+                    Matcher rurl = RESUME_URL_PATTERN.matcher(headAndTail);
+                    if (rurl.find()) {
+                        mResumeGatewayUrl = rurl.group(1) + "/?v=10&encoding=json";
+                    }
+                    markReadyAndPushPresence(webSocket);
                 }
                 return;
             }
@@ -551,13 +668,25 @@ public final class DiscordPresenceManager {
             switch (op) {
                 case 10: { // HELLO
                     long interval = data != null ? data.optLong("heartbeat_interval", 41250L) : 41250L;
+                    if (mLastSequence != null && mLastSequence > 0 && !mSessionId.isEmpty()) {
+                        sendResume(webSocket);
+                    } else {
+                        sendIdentify(webSocket);
+                    }
                     startHeartbeat(webSocket, interval);
-                    sendIdentify(webSocket);
                     break;
                 }
                 case 0: { // DISPATCH
-                    if ("READY".equals(eventType)) {
+                    if ("READY".equals(eventType) || "RESUMED".equals(eventType)) {
                         if (data != null) {
+                            String sid = data.optString("session_id", "");
+                            if (!sid.isEmpty()) {
+                                mSessionId = sid;
+                            }
+                            String rurl = data.optString("resume_gateway_url", "");
+                            if (!rurl.isEmpty()) {
+                                mResumeGatewayUrl = rurl + "/?v=10&encoding=json";
+                            }
                             JSONObject user = data.optJSONObject("user");
                             if (user != null) {
                                 String id = user.optString("id", "");
@@ -569,12 +698,7 @@ public final class DiscordPresenceManager {
                                 persistToDiskFile();
                             }
                         }
-                        mConnected = true;
-                        mConnecting = false;
-                        mLastError = "";
-                        notifyListeners();
-                        sendPresenceUpdate();
-                        mScheduler.schedule(this::sendPresenceUpdate, 2, TimeUnit.SECONDS);
+                        markReadyAndPushPresence(webSocket);
                     }
                     break;
                 }
@@ -587,9 +711,15 @@ public final class DiscordPresenceManager {
                     connectIfNeeded();
                     break;
                 }
-                case 9: { // INVALID SESSION
-                    disconnect();
-                    mScheduler.schedule(this::connectIfNeeded, 3, TimeUnit.SECONDS);
+                case 9: { // INVALID SESSION — re-identify on the same open socket after 200ms (Kizzy behavior)
+                    mSessionId = "";
+                    mResumeGatewayUrl = "";
+                    mLastSequence = null;
+                    mScheduler.schedule(() -> {
+                        if (mWebSocket == webSocket) {
+                            sendIdentify(webSocket);
+                        }
+                    }, 200, TimeUnit.MILLISECONDS);
                     break;
                 }
                 default:
@@ -597,14 +727,24 @@ public final class DiscordPresenceManager {
             }
         } catch (Throwable t) {
             Logging.w(TAG, "Error handling Discord Gateway message: " + t.getMessage());
-            // Even if READY JSON parsing hit an edge case, ensure presence update is pushed
             if (text.contains("\"READY\"")) {
-                mConnected = true;
-                mConnecting = false;
-                notifyListeners();
-                sendPresenceUpdate();
+                markReadyAndPushPresence(webSocket);
             }
         }
+    }
+
+    private void markReadyAndPushPresence(@NonNull WebSocket webSocket) {
+        if (webSocket != mWebSocket) return;
+        mConnected = true;
+        mConnecting = false;
+        mLastError = "";
+        notifyListeners();
+        sendPresenceUpdate();
+        mScheduler.schedule(() -> {
+            if (mWebSocket == webSocket && mConnected) {
+                sendPresenceUpdate();
+            }
+        }, 1500, TimeUnit.MILLISECONDS);
     }
 
     private synchronized void startHeartbeat(@NonNull WebSocket webSocket, long intervalMs) {
@@ -614,6 +754,7 @@ public final class DiscordPresenceManager {
         long safeInterval = Math.max(15000L, intervalMs);
         mHeartbeatFuture = mScheduler.scheduleAtFixedRate(
                 () -> {
+                    if (mWebSocket != webSocket) return;
                     sendHeartbeat(webSocket);
                     if (mConnected) {
                         sendPresenceUpdate();
@@ -626,49 +767,62 @@ public final class DiscordPresenceManager {
     }
 
     private void sendHeartbeat(@NonNull WebSocket webSocket) {
+        if (webSocket != mWebSocket) return;
         try {
             JSONObject payload = new JSONObject();
             payload.put("op", 1);
             Integer seq = mLastSequence;
-            payload.put("d", seq != null ? seq : JSONObject.NULL);
+            payload.put("d", (seq != null && seq > 0) ? seq : JSONObject.NULL);
             webSocket.send(payload.toString());
         } catch (Throwable ignored) {
         }
     }
 
+    private void sendResume(@NonNull WebSocket webSocket) {
+        if (webSocket != mWebSocket) return;
+        String token = getToken();
+        if (token.isEmpty() || mSessionId.isEmpty() || mLastSequence == null) {
+            sendIdentify(webSocket);
+            return;
+        }
+        try {
+            JSONObject data = new JSONObject();
+            data.put("token", token);
+            data.put("session_id", mSessionId);
+            data.put("seq", mLastSequence);
+
+            JSONObject packet = new JSONObject();
+            packet.put("op", 6);
+            packet.put("d", data);
+            webSocket.send(packet.toString());
+        } catch (Throwable t) {
+            sendIdentify(webSocket);
+        }
+    }
+
     private void sendIdentify(@NonNull WebSocket webSocket) {
+        if (webSocket != mWebSocket) return;
         String token = getToken();
         if (token.isEmpty()) return;
         try {
-            // Identify with Desktop Client properties (like KizzyRPC) so Discord Gateway accepts
-            // type 0 ("Playing") Rich Presence activities with application_id 1571705435713437726.
+            // Identify with Kizzy's exact Gateway v10 Desktop Client properties (capabilities=65,
+            // largeThreshold=100, browser="Discord Client", device="ktor", os="Windows")
             JSONObject properties = new JSONObject();
-            properties.put("os", "Windows");
             properties.put("browser", "Discord Client");
-            properties.put("device", "Discord Client");
+            properties.put("device", "ktor");
+            properties.put("os", "Windows");
 
             JSONObject data = new JSONObject();
-            data.put("token", token);
-            data.put("capabilities", 4093);
-            data.put("properties", properties);
+            data.put("capabilities", 65);
             data.put("compress", false);
-            data.put("presence", buildPresenceObject());
+            data.put("largeThreshold", 100);
+            data.put("properties", properties);
+            data.put("token", token);
 
             JSONObject packet = new JSONObject();
             packet.put("op", 2);
             packet.put("d", data);
-            boolean sent = webSocket.send(packet.toString());
-            if (sent) {
-                // Optimistically mark connected after IDENTIFY and push op:3 presence update
-                mScheduler.schedule(() -> {
-                    if (mWebSocket == webSocket) {
-                        mConnected = true;
-                        mConnecting = false;
-                        notifyListeners();
-                        sendPresenceUpdate();
-                    }
-                }, 1800, TimeUnit.MILLISECONDS);
-            }
+            webSocket.send(packet.toString());
         } catch (Throwable t) {
             Logging.w(TAG, "Failed to send Discord IDENTIFY: " + t.getMessage());
         }
@@ -693,11 +847,10 @@ public final class DiscordPresenceManager {
         timestamps.put("start", mSessionStartTimestamp);
 
         JSONObject activity = new JSONObject();
-        activity.put("name", InfoDistributor.APP_NAME);
-        activity.put("state", resolveEffectiveState());
-        activity.put("details", mCurrentDetails);
+        activity.put("name", sanitizeRpcText(InfoDistributor.APP_NAME));
+        activity.put("state", sanitizeRpcText(resolveEffectiveState()));
+        activity.put("details", sanitizeRpcText(mCurrentDetails));
         activity.put("type", 0); // Playing
-        activity.put("created_at", mSessionStartTimestamp);
         activity.put("timestamps", timestamps);
         activity.put("application_id", DISCORD_APPLICATION_ID);
         return activity;
@@ -709,10 +862,10 @@ public final class DiscordPresenceManager {
         activities.put(buildActivityObject());
 
         JSONObject presence = new JSONObject();
-        presence.put("status", getOnlineStatus());
-        presence.put("since", 0);
         presence.put("activities", activities);
-        presence.put("afk", false);
+        presence.put("afk", true);
+        presence.put("since", mSessionStartTimestamp);
+        presence.put("status", getOnlineStatus());
         return presence;
     }
 
@@ -759,6 +912,10 @@ public final class DiscordPresenceManager {
                         if (!username.isEmpty()) editor.putString(KEY_USERNAME, username);
                         editor.commit();
                         persistToDiskFile();
+                        notifyListeners();
+                    } else if (response.code() == 401 && token.equals(getToken())) {
+                        clearInvalidToken("Discord session expired — tap Sign in with Discord below");
+                        disconnect();
                         notifyListeners();
                     }
                 } catch (Throwable ignored) {
@@ -829,19 +986,60 @@ public final class DiscordPresenceManager {
         return mCurrentState;
     }
 
+    @NonNull
+    private static String sanitizeRpcText(@Nullable String text) {
+        if (text == null) return "";
+        String trimmed = text.trim();
+        return trimmed.length() > 128 ? trimmed.substring(0, 128) : trimmed;
+    }
+
+    @NonNull
+    public static String extractUserIdFromToken(@Nullable String rawToken) {
+        String t = normalizeToken(rawToken);
+        String[] parts = t.split("\\.");
+        if (parts.length == 3 && !parts[0].isEmpty()) {
+            try {
+                byte[] decoded = Base64.decode(parts[0], Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+                String candidate = new String(decoded, StandardCharsets.UTF_8).trim();
+                if (candidate.matches("\\d{15,22}")) {
+                    return candidate;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return "";
+    }
+
     public static boolean looksLikeDiscordToken(@Nullable String raw) {
         if (raw == null) return false;
         String t = normalizeToken(raw);
-        if (t.startsWith("mfa.") && t.length() > 30) return true;
+        if (t.length() < 30) return false;
+        if ("null".equalsIgnoreCase(t) || "undefined".equalsIgnoreCase(t)) return false;
+        // Reject JWTs (eyJ...) and hCaptcha tokens (P1_...) and HTTP Basic auth
+        if (t.startsWith("P1_") || t.startsWith("eyJ") || t.startsWith("Basic ")) {
+            return false;
+        }
+        if (t.startsWith("mfa.") && t.length() > 30) {
+            return true;
+        }
         String[] parts = t.split("\\.");
-        return parts.length == 3 && t.length() >= 50;
+        if (parts.length != 3 || t.length() < 50) {
+            return false;
+        }
+        // First segment of a standard Discord user token is base64(snowflake_user_id)
+        if (!extractUserIdFromToken(t).isEmpty()) {
+            return true;
+        }
+        return parts[0].matches("[A-Za-z0-9_-]{18,36}")
+                && parts[1].matches("[A-Za-z0-9_-]{4,12}")
+                && parts[2].matches("[A-Za-z0-9_-]{20,140}");
     }
 
     @NonNull
     public static String normalizeToken(@Nullable String raw) {
         if (raw == null) return "";
         String t = raw.trim();
-        if (t.startsWith("\"") && t.endsWith("\"") && t.length() >= 2) {
+        while (t.startsWith("\"") && t.endsWith("\"") && t.length() >= 2) {
             t = t.substring(1, t.length() - 1).trim();
         }
         if (t.regionMatches(true, 0, "Bearer ", 0, 7)) {
