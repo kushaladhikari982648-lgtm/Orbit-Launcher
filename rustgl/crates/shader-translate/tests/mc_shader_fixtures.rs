@@ -1006,9 +1006,9 @@ void main() {
 fn mc_26_3_output_array_indexed_at_run_time_becomes_scalar_outputs() {
     let out = assert_ok(OIT_ADD_TRANSMITTANCE_FSH_26_3);
 
-    // The array stops being an output: it is an ordinary global, which GLSL ES lets a
-    // run-time value index.
-    assert!(out.contains("vec4 coeff[2][4];"), "{out}");
+    // The array stops being an output: it is a flattened 1D ordinary global, which both
+    // GLSL ES 3.00 and 3.10+ let a run-time value index.
+    assert!(out.contains("vec4 coeff[8];"), "{out}");
     assert!(!out.contains("out vec4 coeff["), "{out}");
 
     // One scalar output per element, holding the locations the array occupied, last index
@@ -1020,28 +1020,20 @@ fn mc_26_3_output_array_indexed_at_run_time_becomes_scalar_outputs() {
             )),
             "{out}"
         );
+        assert!(
+            out.contains(&format!(
+                "rustgl_out_coeff_{flat} = coeff[{flat}];"
+            )),
+            "{out}"
+        );
     }
 
-    // Every write to an output now carries a constant index, and main() performs all of them
-    // on the way out.
-    for outer in 0..2 {
-        for inner in 0..4 {
-            let flat = outer * 4 + inner;
-            assert!(
-                out.contains(&format!(
-                    "rustgl_out_coeff_{flat} = coeff[{outer}][{inner}];"
-                )),
-                "{out}"
-            );
-        }
-    }
-
-    // The write the game actually performs is untouched, and the flush follows it.
+    // The write the game actually performs is flattened to 1D, and the flush follows it.
     let write = out
-        .find("coeff[attachmentIndex][i]")
+        .find("coeff[(attachmentIndex) * 4 + (i)]")
         .unwrap_or_else(|| panic!("the write survives: {out}"));
     let flush = out
-        .find("rustgl_out_coeff_0 = coeff[0][0];")
+        .find("rustgl_out_coeff_0 = coeff[0];")
         .unwrap_or_else(|| panic!("the flush runs: {out}"));
     assert!(write < flush, "the copy-out must follow the writes: {out}");
 }
@@ -1057,8 +1049,8 @@ fn output_arrays_indexed_with_constants_are_left_alone() {
 fn an_output_array_of_arrays_is_legalized_even_with_constant_indices() {
     let out = assert_ok(OIT_ARRAY_OF_ARRAYS_FSH_26_3);
     // The shape is the problem, not the index: an array of arrays cannot be a fragment
-    // output at all.
-    assert!(out.contains("vec4 coeff[2][4];"), "{out}");
+    // output at all, and is flattened to 1D so ES 3.00 and ES 3.10+ both accept it.
+    assert!(out.contains("vec4 coeff[8];"), "{out}");
     assert!(!out.contains("out vec4 coeff["), "{out}");
     for flat in 0..8 {
         assert!(
@@ -1067,11 +1059,9 @@ fn an_output_array_of_arrays_is_legalized_even_with_constant_indices() {
             )),
             "{out}"
         );
-        let outer = flat / 4;
-        let inner = flat % 4;
         assert!(
             out.contains(&format!(
-                "rustgl_out_coeff_{flat} = coeff[{outer}][{inner}];"
+                "rustgl_out_coeff_{flat} = coeff[{flat}];"
             )),
             "{out}"
         );

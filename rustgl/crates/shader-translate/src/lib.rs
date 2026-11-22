@@ -1052,40 +1052,20 @@ impl OutputArray {
         format!("rustgl_out_{}_{}", self.name, flat)
     }
 
-    /// Subscript and location of element `flat`. OpenGL numbers the elements of an output
-    /// array consecutively with the last index varying fastest, which is exactly the order
-    /// a flattened index walks them in, so the location offset is the flat index itself.
-    fn element(&self, flat: usize) -> (String, usize) {
-        let mut rest = flat;
-        let mut indices = vec![0usize; self.dims.len()];
-        for (depth, dim) in self.dims.iter().enumerate().rev() {
-            indices[depth] = rest % dim;
-            rest /= dim;
-        }
-        let mut subscript = String::new();
-        for index in indices {
-            subscript.push_str(&format!("[{index}]"));
-        }
-        (subscript, self.location + flat)
-    }
-
-    /// `rustgl_out_coeff_3 = coeff[0][3];`
+    /// `rustgl_out_coeff_3 = coeff[3];`
     fn flush_assignment(&self, flat: usize) -> String {
-        let (subscript, _) = self.element(flat);
-        format!("{} = {}{};", self.out_name(flat), self.name, subscript)
+        format!("{} = {}[{flat}];", self.out_name(flat), self.name)
     }
 
-    /// What replaces the declaration: an ordinary global of the same name and type, then one
+    /// What replaces the declaration: a 1D ordinary global of the same name and type (flattening
+    /// 2D arrays-of-arrays so GLSL ES 3.00 `#version 300 es` compiles it too), then one
     /// scalar output per element. Kept on a single line so every line after it keeps the
     /// number the driver will report an error against.
     fn replacement(&self) -> String {
-        let mut dims = String::new();
-        for dim in &self.dims {
-            dims.push_str(&format!("[{dim}]"));
-        }
-        let mut out = format!("{} {}{};", self.ty, self.name, dims);
-        for flat in 0..self.elements() {
-            let (_, location) = self.element(flat);
+        let total = self.elements();
+        let mut out = format!("{} {}[{total}];", self.ty, self.name);
+        for flat in 0..total {
+            let location = self.location + flat;
             out.push_str(&format!(
                 " layout(location = {location}) out {} {};",
                 self.ty,
@@ -1295,6 +1275,65 @@ fn return_with_flush(line: &str, flush: &str) -> Option<String> {
     Some(format!("{indent}{{ {flush} return; }}"))
 }
 
+fn matching_bracket(s: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, c) in s.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn flatten_2d_array_access(line: &str, name: &str, stride: usize) -> String {
+    let mut out = String::with_capacity(line.len() + 16);
+    let mut cursor = 0usize;
+    let bytes = line.as_bytes();
+    while let Some(rel) = line[cursor..].find(name) {
+        let start = cursor + rel;
+        let after_name = start + name.len();
+        let before_ok = start == 0 || !is_ident_byte(bytes[start - 1]);
+        let after_ok = after_name == bytes.len() || !is_ident_byte(bytes[after_name]);
+        if !before_ok || !after_ok || !line[after_name..].starts_with('[') {
+            out.push_str(&line[cursor..after_name]);
+            cursor = after_name;
+            continue;
+        }
+        let Some(close1_rel) = matching_bracket(&line[after_name..]) else {
+            out.push_str(&line[cursor..after_name]);
+            cursor = after_name;
+            continue;
+        };
+        let close1 = after_name + close1_rel;
+        let second_start = close1 + 1;
+        if !line[second_start..].starts_with('[') {
+            out.push_str(&line[cursor..second_start]);
+            cursor = second_start;
+            continue;
+        }
+        let Some(close2_rel) = matching_bracket(&line[second_start..]) else {
+            out.push_str(&line[cursor..second_start]);
+            cursor = second_start;
+            continue;
+        };
+        let close2 = second_start + close2_rel;
+        let idx0 = &line[after_name + 1..close1];
+        let idx1 = &line[second_start + 1..close2];
+        out.push_str(&line[cursor..start]);
+        out.push_str(&format!("{name}[({idx0}) * {stride} + ({idx1})]"));
+        cursor = close2 + 1;
+    }
+    out.push_str(&line[cursor..]);
+    out
+}
+
 /// Makes an output array that is indexed at run time legal in GLSL ES.
 fn legalize_output_arrays(src: &str) -> Cow<'_, str> {
     let macros = macro_int_values(src);
@@ -1374,7 +1413,17 @@ fn legalize_output_arrays(src: &str) -> Cow<'_, str> {
                 continue;
             }
         }
-        out.push_str(line);
+        let mut rewritten = Cow::Borrowed(line);
+        for array in &arrays {
+            if array.dims.len() == 2 {
+                rewritten = Cow::Owned(flatten_2d_array_access(
+                    rewritten.as_ref(),
+                    &array.name,
+                    array.dims[1],
+                ));
+            }
+        }
+        out.push_str(&rewritten);
         out.push('\n');
     }
     Cow::Owned(out)
