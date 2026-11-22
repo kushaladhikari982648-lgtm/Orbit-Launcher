@@ -28,6 +28,7 @@
 #include <android/dlext.h>
 #include <time.h>
 #include "utils.h"
+#include "bigcoreaffinity.h"
 #include "ctxbridges/bridge_tbl.h"
 #include "ctxbridges/osm_bridge.h"
 #include "ctxbridges/window_slot.h"
