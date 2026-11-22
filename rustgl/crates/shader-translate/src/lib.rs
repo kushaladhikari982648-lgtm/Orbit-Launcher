@@ -1413,7 +1413,7 @@ fn legalize_output_arrays(src: &str) -> Cow<'_, str> {
                 continue;
             }
         }
-        let mut rewritten = Cow::Borrowed(line);
+        let mut rewritten: Cow<'_, str> = Cow::Borrowed(*line);
         for array in &arrays {
             if array.dims.len() == 2 {
                 rewritten = Cow::Owned(flatten_2d_array_access(
@@ -1423,7 +1423,7 @@ fn legalize_output_arrays(src: &str) -> Cow<'_, str> {
                 ));
             }
         }
-        out.push_str(&rewritten);
+        out.push_str(rewritten.as_ref());
         out.push('\n');
     }
     Cow::Owned(out)
