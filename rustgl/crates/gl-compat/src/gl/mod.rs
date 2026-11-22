@@ -27,12 +27,26 @@ macro_rules! gl_passthrough {
         $(
             #[no_mangle]
             pub unsafe extern "C" fn $name($($a: $t),*) $(-> $r)? {
-                let fp = $crate::driver_fn_cached::<unsafe extern "C" fn($($t),*) $(-> $r)?>(
-                    stringify!($name),
-                );
-                match fp {
-                    Some(f) => f($($a),*),
-                    None => $crate::khr::announce_missing(stringify!($name)),
+                static CACHE_GEN: core::sync::atomic::AtomicUsize =
+                    core::sync::atomic::AtomicUsize::new(0);
+                static CACHE_PTR: core::sync::atomic::AtomicUsize =
+                    core::sync::atomic::AtomicUsize::new(0);
+                let g = $crate::driver_cache_generation();
+                let mut p = if CACHE_GEN.load(core::sync::atomic::Ordering::Relaxed) == g {
+                    CACHE_PTR.load(core::sync::atomic::Ordering::Relaxed)
+                } else {
+                    0
+                };
+                if p == 0 {
+                    p = $crate::driver_fn_raw_cached(stringify!($name));
+                    CACHE_PTR.store(p, core::sync::atomic::Ordering::Relaxed);
+                    CACHE_GEN.store(g, core::sync::atomic::Ordering::Relaxed);
+                }
+                if p != 0 {
+                    let f: unsafe extern "C" fn($($t),*) $(-> $r)? = core::mem::transmute(p);
+                    f($($a),*)
+                } else {
+                    $crate::khr::announce_missing(stringify!($name))
                 }
             }
         )*

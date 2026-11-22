@@ -260,6 +260,9 @@ public final class JREUtils {
         RendererInterface currentRenderer = Renderers.INSTANCE.getCurrentRenderer();
         String rendererId = currentRenderer.getRendererId();
 
+        if (rendererId.startsWith("opengles")) {
+            envMap.put("LIBGL_NOERROR", "1");
+        }
         if (rendererId.startsWith("opengles2")) {
             envMap.put("LIBGL_ES", "2");
             envMap.put("LIBGL_MIPMAP", "3");
@@ -478,6 +481,16 @@ public final class JREUtils {
 
         // Some phones are not using the right number of cores, fix that
         userArgs.add("-XX:ActiveProcessorCount=" + java.lang.Runtime.getRuntime().availableProcessors());
+        boolean hasLwjglAllocator = false;
+        for (String arg : userArgs) {
+            if (arg != null && arg.startsWith("-Dorg.lwjgl.system.allocator=")) {
+                hasLwjglAllocator = true;
+                break;
+            }
+        }
+        if (!hasLwjglAllocator) {
+            userArgs.add("-Dorg.lwjgl.system.allocator=system");
+        }
 
         // Runtime specific JVM fixes (see getArm32FixArgs). They must stay before JVMArgs,
         // which end with the main class.
@@ -529,6 +542,7 @@ public final class JREUtils {
         chdir(gameVersion == null ? ProfilePathHome.getGameHome() : gameVersion.getGameDir().getAbsolutePath());
         userArgs.add(0,"java"); //argv[0] is the program name according to C standard.
 
+        System.gc();
         Logger.appendToLog("JVM startup: invoking selected Java " + runtime.javaVersion + " (native JLI)");
         final int exitCode = VMLauncher.launchJVM(userArgs.toArray(new String[0]));
         Logger.appendToLog("Java Exit code: " + exitCode);

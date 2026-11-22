@@ -61,3 +61,35 @@ class MojoRustGLTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/android.yml').read_text()
         self.assertIn('python3 rustgl/pack_aar.py', workflow)
         self.assertIn('MESA_GLES_VERSION_OVERRIDE=3.0', workflow)
+
+    def test_fps_and_rustgl_gurkha14_optimizations(self):
+        import json
+        lock = json.loads((ROOT / 'tools/rustgl-lock.json').read_text())
+        self.assertEqual(lock['commit'], 'aa3fa35cf5a2144ae64bea4b438ce3abe9507c52')
+        self.assertEqual(lock['version'], '0.3.0-gurkha.14')
+
+        shader_lib = (ROOT / 'rustgl/crates/shader-translate/src/lib.rs').read_text()
+        self.assertIn('fn legalize_output_arrays', shader_lib)
+        fixtures = (ROOT / 'rustgl/crates/shader-translate/tests/mc_shader_fixtures.rs').read_text()
+        self.assertIn('OIT_ADD_TRANSMITTANCE_FSH_26_3', fixtures)
+
+        gl_compat = (ROOT / 'rustgl/crates/gl-compat/src/lib.rs').read_text()
+        self.assertIn('DRIVER_CACHE_L1', gl_compat)
+        self.assertIn('EGL_SYM_CACHE', gl_compat)
+        self.assertIn('STATIC_IMMUTABLE_COUNT', gl_compat)
+
+        fixed_draw = (ROOT / 'rustgl/crates/gl-compat/src/fixed_draw.rs').read_text()
+        self.assertIn('!fixed_func::any_client_array_enabled()', fixed_draw)
+
+        jre = (SRC / 'net/kdt/pojavlaunch/utils/JREUtils.java').read_text()
+        self.assertIn('-Dorg.lwjgl.system.allocator=system', jre)
+        self.assertIn('System.gc();', jre)
+
+        gl_bridge = (ROOT / 'ZalithLauncher/src/main/jni/ctxbridges/gl_bridge.c').read_text()
+        self.assertIn('bigcore_set_affinity();', gl_bridge)
+        self.assertIn('ANativeWindow_setBuffersGeometry(next, bufW, bufH, bundle->format)', gl_bridge)
+
+        window_slot = (ROOT / 'ZalithLauncher/src/main/jni/ctxbridges/window_slot.c').read_text()
+        self.assertIn('_Atomic uint64_t generation;', window_slot)
+        self.assertIn('atomic_load_explicit(&generation, memory_order_acquire)', window_slot)
+

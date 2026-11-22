@@ -7,6 +7,7 @@
 #include <android/log.h>
 #include "osm_bridge.h"
 #include "window_slot.h"
+#include "../bigcoreaffinity.h"
 
 static const char* g_LogTag = "GLBridge";
 static __thread osm_render_window_t* currentBundle;
@@ -58,7 +59,11 @@ void osm_swap_surfaces(osm_render_window_t* bundle) {
     if (bundle->nativeSurface) ANativeWindow_release(bundle->nativeSurface);
     bundle->nativeSurface = next;
     bundle->disable_rendering = !next;
-    if (next) ANativeWindow_setBuffersGeometry(next, 0, 0, WINDOW_FORMAT_RGBX_8888);
+    if (next) {
+        int bufW = (pojav_environ && pojav_environ->savedWidth > 0) ? pojav_environ->savedWidth : 0;
+        int bufH = (pojav_environ && pojav_environ->savedHeight > 0) ? pojav_environ->savedHeight : 0;
+        ANativeWindow_setBuffersGeometry(next, bufW, bufH, WINDOW_FORMAT_RGBX_8888);
+    }
     osm_set_no_render_buffer(&bundle->buffer);
 }
 
@@ -122,6 +127,7 @@ void osm_make_current(osm_render_window_t* bundle) {
     }
     osm_apply_current_ll();
     OSMesaPixelStore_p(OSMESA_Y_UP,0);
+    bigcore_set_affinity();
 }
 
 void osm_swap_buffers() {

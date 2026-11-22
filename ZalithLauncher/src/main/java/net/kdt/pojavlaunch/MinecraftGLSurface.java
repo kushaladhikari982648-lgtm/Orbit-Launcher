@@ -168,9 +168,12 @@ public class MinecraftGLSurface extends View implements GrabListener {
 
                 @Override
                 public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-                    // SDL needs the real surface size, not the scaled resolution (it would render offscreen)
-                    if (sdlEnabled) SDLActivity.getSDLSurface().surfaceChanged(holder, format, Tools.currentDisplayMetrics.widthPixels, Tools.currentDisplayMetrics.heightPixels);
                     refreshSize();
+                    if (sdlEnabled) {
+                        int sdlW = CallbackBridge.windowWidth > 0 ? CallbackBridge.windowWidth : Tools.currentDisplayMetrics.widthPixels;
+                        int sdlH = CallbackBridge.windowHeight > 0 ? CallbackBridge.windowHeight : Tools.currentDisplayMetrics.heightPixels;
+                        SDLActivity.getSDLSurface().surfaceChanged(holder, format, sdlW, sdlH);
+                    }
                 }
 
                 @Override
@@ -212,9 +215,12 @@ public class MinecraftGLSurface extends View implements GrabListener {
 
                 @Override
                 public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
-                    // SDL needs the real surface size, not the scaled resolution (it would render offscreen)
-                    if (sdlEnabled) SDLActivity.getSDLSurface().surfaceChanged(null, 0, Tools.currentDisplayMetrics.widthPixels, Tools.currentDisplayMetrics.heightPixels);
                     refreshSize();
+                    if (sdlEnabled) {
+                        int sdlW = CallbackBridge.windowWidth > 0 ? CallbackBridge.windowWidth : Tools.currentDisplayMetrics.widthPixels;
+                        int sdlH = CallbackBridge.windowHeight > 0 ? CallbackBridge.windowHeight : Tools.currentDisplayMetrics.heightPixels;
+                        SDLActivity.getSDLSurface().surfaceChanged(null, 0, sdlW, sdlH);
+                    }
                 }
 
                 @Override

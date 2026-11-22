@@ -160,7 +160,9 @@ class LaunchGame {
                 }
             }
 
-            JREUtils.redirectAndPrintJRELog()
+            if (AllSettings.enableLogOutput.getValue()) {
+                JREUtils.redirectAndPrintJRELog()
+            }
 
             launch(activity, account, minecraftVersion, javaRuntime, customArgs)
 

@@ -42,6 +42,7 @@ public class CallbackBridge {
     // mouse is grabbed) and the state of the mouse buttons as Android MotionEvent button flags
     private static float sdlLastX, sdlLastY;
     private static int sdlMouseButtonState = 0;
+    private static volatile boolean sdlFocusPrimed = false;
     public volatile static boolean holdingAlt, holdingCapslock, holdingCtrl,
             holdingNumlock, holdingShift;
 
@@ -84,7 +85,10 @@ public class CallbackBridge {
         sdlLastX = x;
         sdlLastY = y;
         if (!MinecraftGLSurface.sdlEnabled) return;
-        nativeEnsureSdlKeyboardFocus(false);
+        if (!sdlFocusPrimed) {
+            sdlFocusPrimed = true;
+            nativeEnsureSdlKeyboardFocus(false);
+        }
         // SDL treats HOVER_MOVE and MOVE the same; while the game grabs the mouse it expects relative motion
         if (isGrabbing) SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, deltaX, deltaY, true);
         else SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, false);

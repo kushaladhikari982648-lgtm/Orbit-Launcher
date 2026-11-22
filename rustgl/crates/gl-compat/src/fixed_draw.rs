@@ -297,16 +297,11 @@ fn restore(be: &dyn Backend, prev_vao: i32, prev_abuf: i32) {
 /// # Safety
 /// Reads raw client-array memory recorded by `glVertexPointer` and friends.
 pub unsafe fn try_draw_arrays(mode: u32, first: i32, count: i32) -> bool {
-    if count <= 0 || first < 0 {
+    if !fixed_func::any_client_array_enabled() || count <= 0 || first < 0 {
         return false;
     }
     let be = match crate::backend() {
         Some(b) => b,
-        None => return false,
-    };
-    type GetInt = unsafe extern "C" fn(u32, *mut i32);
-    let get_int = match crate::driver_fn_cached::<GetInt>("glGetIntegerv") {
-        Some(f) => f,
         None => return false,
     };
     // Tracked by glUseProgram instead of queried: this runs on every glDrawArrays, and a
@@ -322,6 +317,11 @@ pub unsafe fn try_draw_arrays(mode: u32, first: i32, count: i32) -> bool {
     if !pos.enabled {
         return false;
     }
+    type GetInt = unsafe extern "C" fn(u32, *mut i32);
+    let get_int = match crate::driver_fn_cached::<GetInt>("glGetIntegerv") {
+        Some(f) => f,
+        None => return false,
+    };
 
     let mut guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
     if guard.is_none() {

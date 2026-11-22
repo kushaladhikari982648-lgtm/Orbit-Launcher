@@ -257,17 +257,13 @@ void pojavStopPumping() {
     }
 }
 
+static atomic_bool s_sdlFocusAndSizeSynced = false;
+
 JNIEXPORT void JNICALL
 Java_org_lwjgl_glfw_CallbackBridge_nativeEnsureSdlKeyboardFocus(
         __attribute__((unused)) JNIEnv *env,
         __attribute__((unused)) jclass clazz,
         jboolean ensureTextInputActive) {
-    void* sdl = dlopen("libSDL3.so", RTLD_LAZY | RTLD_NOLOAD);
-    if (sdl == NULL) {
-        sdl = dlopen("libSDL3.so", RTLD_LAZY | RTLD_LOCAL);
-    }
-    if (sdl == NULL) return;
-
     typedef void* (*SDL_GetKeyboardFocus_t)(void);
     typedef void* (*SDL_GetMouseFocus_t)(void);
     typedef void** (*SDL_GetWindows_t)(int* count);
@@ -278,19 +274,43 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeEnsureSdlKeyboardFocus(
     typedef bool (*SDL_TextInputActive_t)(void* window);
     typedef bool (*SDL_StartTextInput_t)(void* window);
 
-    SDL_GetKeyboardFocus_t getFocus = (SDL_GetKeyboardFocus_t) dlsym(sdl, "SDL_GetKeyboardFocus");
-    SDL_GetMouseFocus_t getMouseFocus = (SDL_GetMouseFocus_t) dlsym(sdl, "SDL_GetMouseFocus");
-    SDL_GetWindows_t getWindows = (SDL_GetWindows_t) dlsym(sdl, "SDL_GetWindows");
-    SDL_ShowWindow_t showWindow = (SDL_ShowWindow_t) dlsym(sdl, "SDL_ShowWindow");
-    SDL_GetWindowSize_t getWindowSize = (SDL_GetWindowSize_t) dlsym(sdl, "SDL_GetWindowSize");
-    SDL_free_t sdlFree = (SDL_free_t) dlsym(sdl, "SDL_free");
-    SDL_OnApplicationDidEnterForeground_t enterFg =
-        (SDL_OnApplicationDidEnterForeground_t) dlsym(sdl, "SDL_OnApplicationDidEnterForeground");
-    SDL_TextInputActive_t isTextActive = (SDL_TextInputActive_t) dlsym(sdl, "SDL_TextInputActive");
-    SDL_StartTextInput_t startText = (SDL_StartTextInput_t) dlsym(sdl, "SDL_StartTextInput");
+    static void* sdl = NULL;
+    static SDL_GetKeyboardFocus_t getFocus = NULL;
+    static SDL_GetMouseFocus_t getMouseFocus = NULL;
+    static SDL_GetWindows_t getWindows = NULL;
+    static SDL_ShowWindow_t showWindow = NULL;
+    static SDL_GetWindowSize_t getWindowSize = NULL;
+    static SDL_free_t sdlFree = NULL;
+    static SDL_OnApplicationDidEnterForeground_t enterFg = NULL;
+    static SDL_TextInputActive_t isTextActive = NULL;
+    static SDL_StartTextInput_t startText = NULL;
+
+    if (sdl == NULL) {
+        sdl = dlopen("libSDL3.so", RTLD_LAZY | RTLD_NOLOAD);
+        if (sdl == NULL) {
+            sdl = dlopen("libSDL3.so", RTLD_LAZY | RTLD_LOCAL);
+        }
+        if (sdl == NULL) return;
+        getFocus = (SDL_GetKeyboardFocus_t) dlsym(sdl, "SDL_GetKeyboardFocus");
+        getMouseFocus = (SDL_GetMouseFocus_t) dlsym(sdl, "SDL_GetMouseFocus");
+        getWindows = (SDL_GetWindows_t) dlsym(sdl, "SDL_GetWindows");
+        showWindow = (SDL_ShowWindow_t) dlsym(sdl, "SDL_ShowWindow");
+        getWindowSize = (SDL_GetWindowSize_t) dlsym(sdl, "SDL_GetWindowSize");
+        sdlFree = (SDL_free_t) dlsym(sdl, "SDL_free");
+        enterFg = (SDL_OnApplicationDidEnterForeground_t) dlsym(sdl, "SDL_OnApplicationDidEnterForeground");
+        isTextActive = (SDL_TextInputActive_t) dlsym(sdl, "SDL_TextInputActive");
+        startText = (SDL_StartTextInput_t) dlsym(sdl, "SDL_StartTextInput");
+    }
 
     void* focusWin = getFocus != NULL ? getFocus() : NULL;
     void* mouseWin = getMouseFocus != NULL ? getMouseFocus() : NULL;
+    if (!ensureTextInputActive &&
+        focusWin != NULL &&
+        mouseWin != NULL &&
+        atomic_load_explicit(&s_sdlFocusAndSizeSynced, memory_order_relaxed)) {
+        return;
+    }
+
     void* firstWin = focusWin != NULL ? focusWin : mouseWin;
     if ((focusWin == NULL || mouseWin == NULL) && getWindows != NULL && showWindow != NULL) {
         int count = 0;
@@ -347,12 +367,16 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeEnsureSdlKeyboardFocus(
                 if (onNativeMouse != NULL) {
                     (*env)->CallStaticVoidMethod(env, sdlClass, onNativeMouse, 0, 7 /* ACTION_HOVER_MOVE */, 1.0f, 1.0f, JNI_FALSE);
                 }
+                mouseWin = getMouseFocus != NULL ? getMouseFocus() : NULL;
             }
             (*env)->DeleteLocalRef(env, sdlClass);
         }
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
         }
+    }
+    if (focusWin != NULL && mouseWin != NULL && !needsResizeSync) {
+        atomic_store_explicit(&s_sdlFocusAndSizeSynced, true, memory_order_relaxed);
     }
     if (ensureTextInputActive && focusWin != NULL && isTextActive != NULL && startText != NULL) {
         if (!isTextActive(focusWin)) {
@@ -702,6 +726,7 @@ void noncritical_send_mouse_button(__attribute__((unused)) JNIEnv* env, __attrib
 void critical_send_screen_size(jint width, jint height) {
     pojav_environ->savedWidth = width;
     pojav_environ->savedHeight = height;
+    atomic_store_explicit(&s_sdlFocusAndSizeSynced, false, memory_order_relaxed);
     if (pojav_environ->isInputReady) {
         if (pojav_environ->GLFW_invoke_FramebufferSize) {
             if (pojav_environ->isUseStackQueueCall) {

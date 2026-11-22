@@ -788,29 +788,67 @@ pub(crate) fn probe_shader_target_is_es_for_test(version: &str) -> bool {
 // Context transitions invalidate all generations; misses before a context exists
 // are deliberately not retained. Borrow scopes end before calling the driver.
 type DriverCache = std::collections::HashMap<&'static [u8], usize>;
-static DRIVER_CACHE_GENERATION: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const DRIVER_L1_SLOTS: usize = 128;
+static DRIVER_CACHE_GENERATION: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
 thread_local! {
     static DRIVER_CACHE: std::cell::RefCell<(usize, DriverCache)> =
         std::cell::RefCell::new((usize::MAX, DriverCache::new()));
+    static DRIVER_CACHE_L1: std::cell::RefCell<(usize, [(usize, usize, usize); DRIVER_L1_SLOTS])> =
+        const { std::cell::RefCell::new((usize::MAX, [(0, 0, 0); DRIVER_L1_SLOTS])) };
 }
 
 fn clear_driver_cache() {
     DRIVER_CACHE_GENERATION.fetch_add(1, Ordering::AcqRel);
     DRIVER_CACHE.with(|cache| cache.borrow_mut().1.clear());
+    DRIVER_CACHE_L1.with(|l1| l1.borrow_mut().1.fill((0, 0, 0)));
+}
+
+#[inline]
+fn driver_l1_slot(ptr: usize, len: usize) -> usize {
+    ((ptr >> 3) ^ ptr.wrapping_shr(11) ^ len) & (DRIVER_L1_SLOTS - 1)
 }
 
 fn cached_driver_address(name: &[u8]) -> Option<usize> {
     let generation = DRIVER_CACHE_GENERATION.load(Ordering::Acquire);
-    DRIVER_CACHE.with(|cache| {
+    let ptr_key = name.as_ptr() as usize;
+    let len_key = name.len();
+    let slot_idx = driver_l1_slot(ptr_key, len_key);
+    let l1_hit = DRIVER_CACHE_L1.with(|l1| {
+        let mut l1 = l1.borrow_mut();
+        if l1.0 != generation {
+            l1.1.fill((0, 0, 0));
+            l1.0 = generation;
+            return None;
+        }
+        let entry = l1.1[slot_idx];
+        if entry.0 == ptr_key && entry.1 == len_key && entry.2 != 0 {
+            Some(entry.2)
+        } else {
+            None
+        }
+    });
+    if l1_hit.is_some() {
+        return l1_hit;
+    }
+    let found = DRIVER_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if cache.0 != generation {
             cache.1.clear();
             cache.0 = generation;
         }
         cache.1.get(name).copied()
-    })
+    });
+    if let Some(addr) = found {
+        DRIVER_CACHE_L1.with(|l1| {
+            let mut l1 = l1.borrow_mut();
+            l1.0 = generation;
+            l1.1[slot_idx] = (ptr_key, len_key, addr);
+        });
+    }
+    found
 }
 
+#[inline]
 pub(crate) fn driver_fn_cached<T: Copy>(name: &'static str) -> Option<T> {
     trace_call(name);
     // Validate on hits too: transmute_copy into a differently-sized T is unsafe.
@@ -821,7 +859,24 @@ pub(crate) fn driver_fn_cached<T: Copy>(name: &'static str) -> Option<T> {
     }
     let resolved = unsafe { driver_fn::<T>(name) }?;
     let ptr: usize = unsafe { std::mem::transmute_copy::<T, usize>(&resolved) };
-    DRIVER_CACHE.with(|cache| { cache.borrow_mut().1.insert(key, ptr); });
+    let generation = DRIVER_CACHE_GENERATION.load(Ordering::Acquire);
+    DRIVER_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.0 != generation {
+            cache.1.clear();
+            cache.0 = generation;
+        }
+        cache.1.insert(key, ptr);
+    });
+    DRIVER_CACHE_L1.with(|l1| {
+        let mut l1 = l1.borrow_mut();
+        if l1.0 != generation {
+            l1.1.fill((0, 0, 0));
+            l1.0 = generation;
+        }
+        let slot_idx = driver_l1_slot(key.as_ptr() as usize, key.len());
+        l1.1[slot_idx] = (key.as_ptr() as usize, key.len(), ptr);
+    });
     Some(resolved)
 }
 
@@ -2179,9 +2234,24 @@ macro_rules! forward_all {
             #[no_mangle]
             pub unsafe extern "C" fn $name($($a: $t),*) $(-> $r)? {
                 type F = unsafe extern "C" fn($($t),*) $(-> $r)?;
-                trace_call(stringify!($name));
+                static CACHE_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                static CACHE_PTR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                let gen = DRIVER_CACHE_GENERATION.load(Ordering::Relaxed);
+                if CACHE_GEN.load(Ordering::Relaxed) == gen {
+                    let addr = CACHE_PTR.load(Ordering::Relaxed);
+                    if addr != 0 {
+                        trace_call(stringify!($name));
+                        let f: F = std::mem::transmute_copy(&addr);
+                        return f($($a),*);
+                    }
+                }
                 match driver_fn_cached::<F>(stringify!($name)) {
-                    Some(f) => f($($a),*),
+                    Some(f) => {
+                        let addr: usize = std::mem::transmute_copy(&f);
+                        CACHE_PTR.store(addr, Ordering::Relaxed);
+                        CACHE_GEN.store(gen, Ordering::Release);
+                        f($($a),*)
+                    }
                     None => {
                         errors().set(GL_INVALID_OPERATION);
                         Default::default()
@@ -2648,6 +2718,12 @@ fn buffer_binding_pname(target: u32) -> Option<u32> {
 
 /// Name currently bound to `target`, or 0 when the target is unknown or nothing is bound.
 unsafe fn bound_buffer_name(target: u32) -> u32 {
+    if target == 0x8892 /* GL_ARRAY_BUFFER */ {
+        let cached = current_array_buffer();
+        if cached != 0 {
+            return cached;
+        }
+    }
     let Some(pname) = buffer_binding_pname(target) else {
         return 0;
     };
@@ -2674,6 +2750,14 @@ fn storage_usage(flags: u32) -> u32 {
 /// Buffer IDs and immutable storage flags. DYNAMIC_STORAGE_BIT allows subdata
 /// updates but never allows reallocating the store with glBufferData.
 static IMMUTABLE_BUFFERS: Mutex<Vec<(u32, u32)>> = Mutex::new(Vec::new());
+static IMMUTABLE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static STATIC_IMMUTABLE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn sync_immutable_counts(v: &[(u32, u32)]) {
+    IMMUTABLE_COUNT.store(v.len(), Ordering::Relaxed);
+    let static_count = v.iter().filter(|(_, flags)| flags & 0x0100 == 0).count();
+    STATIC_IMMUTABLE_COUNT.store(static_count, Ordering::Relaxed);
+}
 
 fn with_immutable<R>(f: impl FnOnce(&mut Vec<(u32, u32)>) -> R) -> R {
     let mut g = IMMUTABLE_BUFFERS.lock().unwrap_or_else(|e| e.into_inner());
@@ -2685,15 +2769,24 @@ fn mark_immutable(buffer: u32, flags: u32) {
         with_immutable(|v| {
             v.retain(|(id, _)| *id != buffer);
             v.push((buffer, flags));
+            sync_immutable_counts(v);
         });
     }
 }
 
+#[inline]
 fn is_immutable(buffer: u32) -> bool {
+    if buffer == 0 || IMMUTABLE_COUNT.load(Ordering::Relaxed) == 0 {
+        return false;
+    }
     with_immutable(|v| v.iter().any(|(id, _)| *id == buffer))
 }
 
+#[inline]
 fn immutable_allows_subdata(buffer: u32) -> bool {
+    if buffer == 0 || STATIC_IMMUTABLE_COUNT.load(Ordering::Relaxed) == 0 {
+        return true;
+    }
     with_immutable(|v| v.iter().find(|(id, _)| *id == buffer)
         .map_or(true, |(_, flags)| flags & 0x0100 != 0))
 }
@@ -2749,7 +2842,7 @@ pub unsafe extern "C" fn glBufferStorage(target: u32, size: isize, data: *const 
 /// everywhere else.
 #[no_mangle]
 pub unsafe extern "C" fn glBufferData(t: u32, size: isize, data: *const c_void, usage: u32) {
-    if is_immutable(bound_buffer_name(t)) {
+    if IMMUTABLE_COUNT.load(Ordering::Relaxed) != 0 && is_immutable(bound_buffer_name(t)) {
         errors().set(GL_INVALID_OPERATION);
         return;
     }
@@ -2762,7 +2855,9 @@ pub unsafe extern "C" fn glBufferData(t: u32, size: isize, data: *const c_void, 
 /// Immutable storage allows subdata only when created with GL_DYNAMIC_STORAGE_BIT.
 #[no_mangle]
 pub unsafe extern "C" fn glBufferSubData(t: u32, o: isize, size: isize, data: *const c_void) {
-    if !immutable_allows_subdata(bound_buffer_name(t)) {
+    if STATIC_IMMUTABLE_COUNT.load(Ordering::Relaxed) != 0
+        && !immutable_allows_subdata(bound_buffer_name(t))
+    {
         errors().set(GL_INVALID_OPERATION);
         return;
     }
@@ -2774,13 +2869,15 @@ pub unsafe extern "C" fn glBufferSubData(t: u32, o: isize, size: isize, data: *c
 
 #[no_mangle]
 pub unsafe extern "C" fn glDeleteBuffers(n: i32, b: *const u32) {
-    if n >= 0 && !b.is_null() {
-        with_immutable(|v| {
-            for i in 0..n as usize {
-                let id = *b.add(i);
-                v.retain(|(x, _)| *x != id);
-            }
-        });
+    if n > 0 && !b.is_null() {
+        let slice = std::slice::from_raw_parts(b, n as usize);
+        if IMMUTABLE_COUNT.load(Ordering::Relaxed) != 0 {
+            with_immutable(|v| {
+                v.retain(|(x, _)| !slice.contains(x));
+                sync_immutable_counts(v);
+            });
+        }
+        vertex_state::forget_buffers(slice);
     }
     match driver_fn_cached::<unsafe extern "C" fn(i32, *const u32)>("glDeleteBuffers") {
         Some(f) => f(n, b),
@@ -3321,13 +3418,49 @@ fn sys_egl() -> Option<&'static SystemEgl> {
     .as_ref()
 }
 
-fn egl_sym<T>(name: &[u8]) -> Option<T>
+const EGL_L1_SLOTS: usize = 64;
+static EGL_SYM_CACHE: [(std::sync::atomic::AtomicUsize, std::sync::atomic::AtomicUsize); EGL_L1_SLOTS] =
+    [const {
+        (
+            std::sync::atomic::AtomicUsize::new(0),
+            std::sync::atomic::AtomicUsize::new(0),
+        )
+    }; EGL_L1_SLOTS];
+
+#[inline]
+fn egl_sym<T>(name: &'static [u8]) -> Option<T>
 where
     T: Copy,
 {
+    if std::mem::size_of::<T>() != std::mem::size_of::<usize>() {
+        return None;
+    }
+    let key = name.as_ptr() as usize;
+    let slot = ((key >> 3) ^ key.wrapping_shr(9) ^ name.len()) & (EGL_L1_SLOTS - 1);
+    if EGL_SYM_CACHE[slot].0.load(Ordering::Relaxed) == key {
+        let addr = EGL_SYM_CACHE[slot].1.load(Ordering::Relaxed);
+        if addr == usize::MAX {
+            return None;
+        }
+        if addr != 0 {
+            return Some(unsafe { std::mem::transmute_copy::<usize, T>(&addr) });
+        }
+    }
     let e = sys_egl()?;
-    let s: libloading::Symbol<T> = unsafe { e.lib.get(name).ok()? };
-    Some(*s)
+    match unsafe { e.lib.get::<T>(name) } {
+        Ok(s) => {
+            let resolved = *s;
+            let addr: usize = unsafe { std::mem::transmute_copy::<T, usize>(&resolved) };
+            EGL_SYM_CACHE[slot].1.store(addr, Ordering::Relaxed);
+            EGL_SYM_CACHE[slot].0.store(key, Ordering::Release);
+            Some(resolved)
+        }
+        Err(_) => {
+            EGL_SYM_CACHE[slot].1.store(usize::MAX, Ordering::Relaxed);
+            EGL_SYM_CACHE[slot].0.store(key, Ordering::Release);
+            None
+        }
+    }
 }
 
 /// Makes a context current and drops every memoized entry point when the context changes.
@@ -3366,10 +3499,26 @@ macro_rules! egl_export {
         #[no_mangle]
         pub unsafe extern "C" fn $name($($arg : $ty),*) -> $ret {
             type F = unsafe extern "C" fn($($ty),*) -> $ret;
+            static CACHED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let cached = CACHED.load(Ordering::Relaxed);
+            if cached != 0 && cached != usize::MAX {
+                let f: F = std::mem::transmute_copy(&cached);
+                return f($($arg),*);
+            }
+            if cached == usize::MAX {
+                #[allow(unused_assignments, unused_mut)]
+                let mut z: $ret = unsafe { std::mem::zeroed() };
+                return z;
+            }
             let n = concat!(stringify!($name), "\0");
             match egl_sym::<F>(n.as_bytes()) {
-                Some(f) => f($($arg),*),
+                Some(f) => {
+                    let addr: usize = std::mem::transmute_copy(&f);
+                    CACHED.store(addr, Ordering::Relaxed);
+                    f($($arg),*)
+                }
                 None => {
+                    CACHED.store(usize::MAX, Ordering::Relaxed);
                     // Safe zero defaults for pointer / int returns
                     #[allow(unused_assignments, unused_mut)]
                     let mut z: $ret = unsafe { std::mem::zeroed() };

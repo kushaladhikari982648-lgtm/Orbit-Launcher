@@ -157,9 +157,16 @@ EXTERNAL_API int pojavInit() {
     }
     ANativeWindow *window = bridge_acquire_window(NULL);
     if (!window) { fprintf(stderr, "EGLBridge: no Android surface\n"); return 0; }
-    pojav_environ->savedWidth = ANativeWindow_getWidth(window);
-    pojav_environ->savedHeight = ANativeWindow_getHeight(window);
+    if (pojav_environ->savedWidth <= 0) {
+        pojav_environ->savedWidth = ANativeWindow_getWidth(window);
+    }
+    if (pojav_environ->savedHeight <= 0) {
+        pojav_environ->savedHeight = ANativeWindow_getHeight(window);
+    }
     bool valid = pojav_environ->savedWidth > 0 && pojav_environ->savedHeight > 0;
+    if (valid) {
+        ANativeWindow_setBuffersGeometry(window, pojav_environ->savedWidth, pojav_environ->savedHeight, WINDOW_FORMAT_RGBX_8888);
+    }
     ANativeWindow_release(window);
     return valid ? pojavInitOpenGL() : 0;
 }
@@ -318,6 +325,7 @@ EXTERNAL_API void pojavRecordFrame(void) {
     uint64_t now = monotonic_ms();
     uint64_t last = atomic_load_explicit(&pojav_environ->lastFpsTimestampMs, memory_order_relaxed);
     if (last == 0) {
+        bigcore_set_affinity();
         atomic_store_explicit(&pojav_environ->lastFpsTimestampMs, now, memory_order_relaxed);
         atomic_store_explicit(&pojav_environ->fpsFrameCount, 1, memory_order_relaxed);
         return;

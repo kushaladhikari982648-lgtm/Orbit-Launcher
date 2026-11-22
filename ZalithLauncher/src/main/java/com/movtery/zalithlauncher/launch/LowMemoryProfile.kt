@@ -24,19 +24,29 @@ import java.util.GregorianCalendar
  * (for example -XX:-UseCompactObjectHeaders).
  */
 object LowMemoryProfile {
-    /** Allocations up to this size get the options: the default allocation of every phone with less than 6 GB. */
-    const val MAX_ALLOCATION_MB = 1536
+    /** Allocations up to this size get the options. */
+    const val MAX_ALLOCATION_MB = 4096
 
     @JvmStatic
     fun getJvmArgs(runtime: Runtime, allocationMb: Int, userArgs: List<String>): List<String> {
-        if (allocationMb > MAX_ALLOCATION_MB) return emptyList()
         fun userSet(name: String) = userArgs.any { it.contains(name) }
         val args = ArrayList<String>()
-        if (runtime.javaVersion >= 18 && !userSet("StringDeduplication")) {
-            args.add("-XX:+UseStringDeduplication")
+        if (!userSet("PerfDisableSharedMem")) {
+            args.add("-XX:+PerfDisableSharedMem")
         }
-        if (runtime.javaVersion >= 25 && is64Bit(runtime) && !userSet("CompactObjectHeaders")) {
-            args.add("-XX:+UseCompactObjectHeaders")
+        if (!userSet("DisableExplicitGC")) {
+            args.add("-XX:+DisableExplicitGC")
+        }
+        if (!userSet("MaxGCPauseMillis")) {
+            args.add("-XX:MaxGCPauseMillis=50")
+        }
+        if (allocationMb <= MAX_ALLOCATION_MB) {
+            if (runtime.javaVersion >= 18 && !userSet("StringDeduplication")) {
+                args.add("-XX:+UseStringDeduplication")
+            }
+            if (runtime.javaVersion >= 25 && is64Bit(runtime) && !userSet("CompactObjectHeaders")) {
+                args.add("-XX:+UseCompactObjectHeaders")
+            }
         }
         return args
     }

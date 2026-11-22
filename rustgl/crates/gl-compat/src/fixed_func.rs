@@ -6,7 +6,41 @@
 //! temporary VBO + a tiny shader so *something* can appear instead of INVALID_OPERATION.
 
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Mutex;
+
+static CLIENT_ARRAY_MASK: AtomicU8 = AtomicU8::new(0);
+static ACTIVE_TEX_UNIT: AtomicUsize = AtomicUsize::new(0);
+static FF_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+#[inline]
+fn sync_client_array_mask(s: &FixedFuncState) {
+    let mut mask = 0u8;
+    if s.vertex.enabled {
+        mask |= 1 << 0;
+    }
+    if s.color.enabled {
+        mask |= 1 << 1;
+    }
+    if s.normal.enabled {
+        mask |= 1 << 2;
+    }
+    if s.texcoord.enabled {
+        mask |= 1 << 3;
+    }
+    if s.texcoord_x[0].enabled {
+        mask |= 1 << 4;
+    }
+    if s.texcoord_x[1].enabled {
+        mask |= 1 << 5;
+    }
+    CLIENT_ARRAY_MASK.store(mask, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn any_client_array_enabled() -> bool {
+    CLIENT_ARRAY_MASK.load(Ordering::Relaxed) != 0
+}
 
 const GL_MODELVIEW: u32 = 0x1700;
 const GL_PROJECTION: u32 = 0x1701;
@@ -123,7 +157,7 @@ impl FixedFuncState {
             texcoord: ClientArray::default(),
             texcoord_x: [ClientArray::default(); 2],
             texture_x: [vec![Mat4::identity()], vec![Mat4::identity()]],
-            active_unit: 0,
+            active_unit: ACTIVE_TEX_UNIT.load(Ordering::Relaxed),
             tex_enabled: [false; 3],
             current_uv: [[0.0; 2]; 3],
             normal: ClientArray::default(),
@@ -172,6 +206,7 @@ fn with_ff<R>(f: impl FnOnce(&mut FixedFuncState) -> R) -> R {
     let mut g = FF.lock().unwrap_or_else(|e| e.into_inner());
     if g.is_none() {
         *g = Some(FixedFuncState::new());
+        FF_INITIALIZED.store(true, Ordering::Relaxed);
     }
     f(g.as_mut().unwrap())
 }
@@ -344,32 +379,38 @@ pub extern "C" fn gl_frustum(left: f64, right: f64, bottom: f64, top: f64, near:
 // ----- Client arrays -----
 
 pub extern "C" fn gl_enable_client_state(cap: u32) {
-    with_ff(|s| match cap {
-        GL_VERTEX_ARRAY => s.vertex.enabled = true,
-        GL_COLOR_ARRAY => s.color.enabled = true,
-        GL_TEXTURE_COORD_ARRAY => match s.client_active_texture {
-            0 => s.texcoord.enabled = true,
-            1 => s.texcoord_x[0].enabled = true,
-            2 => s.texcoord_x[1].enabled = true,
+    with_ff(|s| {
+        match cap {
+            GL_VERTEX_ARRAY => s.vertex.enabled = true,
+            GL_COLOR_ARRAY => s.color.enabled = true,
+            GL_TEXTURE_COORD_ARRAY => match s.client_active_texture {
+                0 => s.texcoord.enabled = true,
+                1 => s.texcoord_x[0].enabled = true,
+                2 => s.texcoord_x[1].enabled = true,
+                _ => {}
+            },
+            GL_NORMAL_ARRAY => s.normal.enabled = true,
             _ => {}
-        },
-        GL_NORMAL_ARRAY => s.normal.enabled = true,
-        _ => {}
+        }
+        sync_client_array_mask(s);
     });
 }
 
 pub extern "C" fn gl_disable_client_state(cap: u32) {
-    with_ff(|s| match cap {
-        GL_VERTEX_ARRAY => s.vertex.enabled = false,
-        GL_COLOR_ARRAY => s.color.enabled = false,
-        GL_TEXTURE_COORD_ARRAY => match s.client_active_texture {
-            0 => s.texcoord.enabled = false,
-            1 => s.texcoord_x[0].enabled = false,
-            2 => s.texcoord_x[1].enabled = false,
+    with_ff(|s| {
+        match cap {
+            GL_VERTEX_ARRAY => s.vertex.enabled = false,
+            GL_COLOR_ARRAY => s.color.enabled = false,
+            GL_TEXTURE_COORD_ARRAY => match s.client_active_texture {
+                0 => s.texcoord.enabled = false,
+                1 => s.texcoord_x[0].enabled = false,
+                2 => s.texcoord_x[1].enabled = false,
+                _ => {}
+            },
+            GL_NORMAL_ARRAY => s.normal.enabled = false,
             _ => {}
-        },
-        GL_NORMAL_ARRAY => s.normal.enabled = false,
-        _ => {}
+        }
+        sync_client_array_mask(s);
     });
 }
 
@@ -592,8 +633,13 @@ pub fn matrix_for_pname(pname: u32) -> Option<[f32; 16]> {
 }
 
 /// `glActiveTexture` hook: tracks which unit texture matrices and `GL_TEXTURE_2D` apply to.
+#[inline]
 pub fn set_active_texture(texture: u32) {
-    with_ff(|s| s.active_unit = texture.saturating_sub(0x84C0) as usize);
+    let unit = texture.saturating_sub(0x84C0) as usize;
+    ACTIVE_TEX_UNIT.store(unit, Ordering::Relaxed);
+    if FF_INITIALIZED.load(Ordering::Relaxed) {
+        with_ff(|s| s.active_unit = unit);
+    }
 }
 
 /// Texture coordinate array of unit 1 or 2.
@@ -697,6 +743,7 @@ pub fn push_arrays(pos: *const f32, col: *const f32, uv: Option<*const f32>) -> 
         };
         s.texcoord_x[0].enabled = false;
         s.texcoord_x[1].enabled = false;
+        sync_client_array_mask(s);
         saved
     })
 }
@@ -707,11 +754,13 @@ pub fn pop_arrays(saved: SavedArrays) {
         s.color = saved.color;
         s.texcoord = saved.texcoord;
         s.texcoord_x = saved.texcoord_x;
+        sync_client_array_mask(s);
     });
 }
 
+#[inline]
 pub fn client_vertex_enabled() -> bool {
-    with_ff(|s| s.vertex.enabled)
+    (CLIENT_ARRAY_MASK.load(Ordering::Relaxed) & 1) != 0
 }
 
 #[inline]

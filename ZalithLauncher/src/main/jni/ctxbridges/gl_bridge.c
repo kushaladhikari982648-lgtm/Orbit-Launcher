@@ -12,6 +12,9 @@
 #include "egl_loader.h"
 #include "context_policy.h"
 #include "window_slot.h"
+#ifndef GURKHA_BRIDGE_TEST
+#include "../bigcoreaffinity.h"
+#endif
 
 static const char* g_LogTag = "GLBridge";
 static __thread gl_render_window_t* currentBundle;
@@ -122,7 +125,15 @@ static bool replace_surface(gl_render_window_t *bundle, bool detached) {
     bundle->window_generation = generation;
     bundle->has_window_generation = true;
     if (next) {
-        if (ANativeWindow_setBuffersGeometry(next, 0, 0, bundle->format) != 0) {
+        int bufW = 0;
+        int bufH = 0;
+#ifndef GURKHA_BRIDGE_TEST
+        if (pojav_environ && pojav_environ->savedWidth > 0 && pojav_environ->savedHeight > 0) {
+            bufW = pojav_environ->savedWidth;
+            bufH = pojav_environ->savedHeight;
+        }
+#endif
+        if (ANativeWindow_setBuffersGeometry(next, bufW, bufH, bundle->format) != 0) {
             gl_failure("native window geometry", EGL_BAD_NATIVE_WINDOW);
             return false;
         }
@@ -168,6 +179,9 @@ void gl_make_current(gl_render_window_t* bundle) {
     }
     currentBundle = bundle;
     if (main) pojav_environ->mainWindowBundle = (basic_render_window_t*)bundle;
+#ifndef GURKHA_BRIDGE_TEST
+    bigcore_set_affinity();
+#endif
 }
 
 void gl_swap_buffers() {

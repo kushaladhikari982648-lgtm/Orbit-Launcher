@@ -272,6 +272,17 @@ fn warn_no_vertex_attrib_format() {
     );
 }
 
+pub(crate) fn forget_buffers(ids: &[u32]) {
+    if ids.is_empty() {
+        return;
+    }
+    with_buffers(|v| {
+        if !v.is_empty() {
+            v.retain(|(id, _)| !ids.contains(id));
+        }
+    });
+}
+
 /// Makes sure a DSA buffer name has storage under `target` before it is bound there.
 ///
 /// GLES keeps **one** data store per buffer name, shared by every binding (measured on Mesa
@@ -285,27 +296,23 @@ pub(crate) unsafe fn note_buffer_target(buffer: u32, target: u32) {
     if buffer == 0 || target != GL_ELEMENT_ARRAY_BUFFER && target != GL_ARRAY_BUFFER {
         return;
     }
+    let shared = buffer_storage_is_shared();
     let known = with_buffers(|v| {
-        v.iter()
-            .find(|(id, _)| *id == buffer)
-            .map(|(_, b)| (b.size, b.usage, b.contents, b.targets.clone()))
+        let (_, b) = v.iter_mut().find(|(id, _)| *id == buffer)?;
+        if b.targets.contains(&target) {
+            return None;
+        }
+        if shared {
+            // The driver's store for this name already exists and is shared: binding is all that is
+            // needed. Recorded so the next bind on any target is a no-op too.
+            b.targets.push(target);
+            return None;
+        }
+        Some((b.size, b.usage, b.contents, b.targets.clone()))
     });
     let Some((size, usage, contents, targets)) = known else {
         return;
     };
-    if targets.contains(&target) {
-        return;
-    }
-    if buffer_storage_is_shared() {
-        // The driver's store for this name already exists and is shared: binding is all that is
-        // needed. Recorded so the next bind on any target is a no-op too.
-        with_buffers(|v| {
-            if let Some(entry) = v.iter_mut().find(|(id, _)| *id == buffer) {
-                entry.1.targets.push(target);
-            }
-        });
-        return;
-    }
     // Whatever this borrows from the context has to be put back: a client that binds an index
     // buffer and then asks for the array-buffer binding must not see a different answer. The
     // element binding is the exception — the caller is in the middle of making it.
@@ -538,6 +545,7 @@ pub unsafe extern "C" fn glNamedBufferData(buffer: u32, size: isize, data: *cons
     // onto any other target this buffer is later bound to.
     if let Some(bind) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindBuffer") {
         bind(GL_ARRAY_BUFFER, buffer);
+        set_array_buffer_binding(buffer);
     }
     if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, isize, *const c_void, u32)>(
         "glBufferData",
@@ -648,15 +656,14 @@ pub unsafe extern "C" fn glNamedBufferStorage(
         errors().set(GL_INVALID_OPERATION);
         return;
     };
-    let mut previous = 0;
-    if let Some(get) = driver_fn_cached::<unsafe extern "C" fn(u32, *mut i32)>("glGetIntegerv") {
-        get(0x8894, &mut previous);
-    }
+    let previous = crate::current_array_buffer();
     bind(GL_ARRAY_BUFFER, buffer);
+    set_array_buffer_binding(buffer);
     // Use the same capability-gated allocation as bind-to-edit storage, not a
     // speculative desktop glBufferStorage pointer returned by EGL.
     crate::glBufferStorage(GL_ARRAY_BUFFER, size, data, flags);
-    bind(GL_ARRAY_BUFFER, previous as u32);
+    bind(GL_ARRAY_BUFFER, previous);
+    set_array_buffer_binding(previous);
     if crate::is_immutable(buffer) {
         with_buffers(|v| {
             let state = DsaBuffer {
@@ -693,11 +700,10 @@ pub unsafe extern "C" fn glNamedBufferSubData(
         errors().set(GL_INVALID_OPERATION);
         return;
     };
-    let mut previous = 0;
-    if let Some(get) = driver_fn_cached::<unsafe extern "C" fn(u32, *mut i32)>("glGetIntegerv") {
-        get(0x8894, &mut previous);
+    let previous = crate::current_array_buffer();
+    if previous != buffer {
+        bind(GL_ARRAY_BUFFER, buffer);
     }
-    bind(GL_ARRAY_BUFFER, buffer);
     if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, isize, isize, *const c_void)>(
         "glBufferSubData",
     ) {
@@ -731,7 +737,9 @@ pub unsafe extern "C" fn glNamedBufferSubData(
             }
         }
     });
-    bind(GL_ARRAY_BUFFER, previous as u32);
+    if previous != buffer {
+        bind(GL_ARRAY_BUFFER, previous);
+    }
 }
 
 #[no_mangle]

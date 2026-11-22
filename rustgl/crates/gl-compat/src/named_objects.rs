@@ -24,13 +24,27 @@ const GL_COPY_WRITE_BUFFER: u32 = 0x8F37;
 /// to bind them to. Names created any other way are still tracked by `glBindTexture`.
 static TEXTURES: Mutex<Vec<(u32, u32)>> = Mutex::new(Vec::new());
 
+/// Lock-free fast path for `glBindTexture`: avoids locking `TEXTURES` and linearly scanning
+/// every texture in the game on repeated binds to the same target.
+const FAST_TEXTURE_SLOTS: usize = 16384;
+static TEXTURE_TARGETS_FAST: [std::sync::atomic::AtomicU32; FAST_TEXTURE_SLOTS] =
+    [const { std::sync::atomic::AtomicU32::new(0) }; FAST_TEXTURE_SLOTS];
+
 /// Records the target a texture name is bound to.
 ///
 /// A texture name is per-target in GLES, so whichever call first pins a name decides where it
 /// lives. This existed only on the `glCreateTextures` path, so a name bound with plain
 /// `glBindTexture` was unknown to the DSA paths and they fell back to "assuming 2D" -- logged
 /// during a replay of Minecraft 1.21.11 for textures 0, 1, 2, 9, 17, 18 and 19.
+#[inline]
 pub(crate) fn note_texture_target(id: u32, target: u32) {
+    let idx = id as usize;
+    if idx < FAST_TEXTURE_SLOTS {
+        if TEXTURE_TARGETS_FAST[idx].load(std::sync::atomic::Ordering::Relaxed) == target {
+            return;
+        }
+        TEXTURE_TARGETS_FAST[idx].store(target, std::sync::atomic::Ordering::Relaxed);
+    }
     let mut v = TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
     match v.iter_mut().find(|(t, _)| *t == id) {
         Some(e) => e.1 = target,
@@ -42,10 +56,18 @@ fn record_texture(id: u32, target: u32) {
     let mut v = TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
     if !v.iter().any(|(i, _)| *i == id) {
         v.push((id, target));
+        let idx = id as usize;
+        if idx < FAST_TEXTURE_SLOTS {
+            TEXTURE_TARGETS_FAST[idx].store(target, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
 fn set_texture_target(id: u32, target: u32) {
+    let idx = id as usize;
+    if idx < FAST_TEXTURE_SLOTS {
+        TEXTURE_TARGETS_FAST[idx].store(target, std::sync::atomic::Ordering::Relaxed);
+    }
     let mut v = TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
     match v.iter_mut().find(|(i, _)| *i == id) {
         Some(e) => e.1 = target,
@@ -54,6 +76,9 @@ fn set_texture_target(id: u32, target: u32) {
 }
 
 pub(crate) fn texture_target(id: u32) -> u32 {
+    if id == 0 {
+        return GL_TEXTURE_2D;
+    }
     let mut v = TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(e) = v.iter_mut().find(|(i, _)| *i == id) {
         return e.1;
@@ -62,6 +87,10 @@ pub(crate) fn texture_target(id: u32) -> u32 {
     // almost always 2D, and raising GL_INVALID_OPERATION here is what turned a missing
     // detail into "OpenGL error 1282" during framebuffer setup.
     v.push((id, GL_TEXTURE_2D));
+    let idx = id as usize;
+    if idx < FAST_TEXTURE_SLOTS {
+        TEXTURE_TARGETS_FAST[idx].store(GL_TEXTURE_2D, std::sync::atomic::Ordering::Relaxed);
+    }
     log_once_unknown_texture(id);
     GL_TEXTURE_2D
 }
@@ -205,15 +234,22 @@ unsafe fn bind_fbo(fbo: u32) -> bool {
 pub(crate) struct FboScope {
     draw: i32,
     read: i32,
+    rebound: bool,
 }
 
 impl Drop for FboScope {
     fn drop(&mut self) {
-        if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindFramebuffer") {
-            // SAFETY: restores bindings the application itself made.
-            unsafe {
-                f(GL_DRAW_FRAMEBUFFER, self.draw as u32);
-                f(GL_READ_FRAMEBUFFER, self.read as u32);
+        if !self.rebound {
+            return;
+        }
+        unsafe {
+            if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindFramebuffer") {
+                if self.draw == self.read {
+                    f(GL_FRAMEBUFFER, self.draw as u32);
+                } else {
+                    f(GL_DRAW_FRAMEBUFFER, self.draw as u32);
+                    f(GL_READ_FRAMEBUFFER, self.read as u32);
+                }
             }
         }
     }
@@ -225,8 +261,11 @@ pub(crate) unsafe fn scoped_fbo(fbo: u32) -> Option<FboScope> {
     let (mut draw, mut read) = (0i32, 0i32);
     get(0x8CA6 /* DRAW_FRAMEBUFFER_BINDING */, &mut draw);
     get(0x8CAA /* READ_FRAMEBUFFER_BINDING */, &mut read);
-    bind(GL_FRAMEBUFFER, fbo);
-    Some(FboScope { draw, read })
+    let rebound = draw as u32 != fbo || read as u32 != fbo;
+    if rebound {
+        bind(GL_FRAMEBUFFER, fbo);
+    }
+    Some(FboScope { draw, read, rebound })
 }
 
 unsafe fn bind_rbo(rbo: u32) -> bool {
@@ -905,19 +944,25 @@ pub unsafe extern "C" fn glBindTextures(first: u32, count: i32, textures: *const
         errors().set(0x0501);
         return;
     }
+    if count == 0 {
+        return;
+    }
+    let active_fn = driver_fn_cached::<unsafe extern "C" fn(u32)>("glActiveTexture");
+    let Some(bind_fn) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindTexture") else {
+        mark_error_site("glBindTextures");
+        errors().set(0x0502);
+        return;
+    };
     for i in 0..count as u32 {
-        if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32)>("glActiveTexture") {
-            f(0x84C0 + first + i);
+        let unit = 0x84C0 + first + i;
+        fixed_func::set_active_texture(unit);
+        if let Some(f) = active_fn {
+            f(unit);
         }
-        let t = texture_target(*textures.add(i as usize));
-        if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindTexture") {
-            if is_bindable_texture_target(t) {
-                f(t, *textures.add(i as usize));
-            }
-        } else {
-            mark_error_site("glBindTextures");
-            errors().set(0x0502);
-            return;
+        let tex = *textures.add(i as usize);
+        let t = texture_target(tex);
+        if is_bindable_texture_target(t) {
+            bind_fn(t, tex);
         }
     }
 }
@@ -928,14 +973,16 @@ pub unsafe extern "C" fn glBindSamplers(first: u32, count: i32, samplers: *const
         errors().set(0x0501);
         return;
     }
+    if count == 0 {
+        return;
+    }
+    let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindSampler") else {
+        mark_error_site("glBindSamplers");
+        errors().set(0x0502);
+        return;
+    };
     for i in 0..count as u32 {
-        if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindSampler") {
-            f(first + i, *samplers.add(i as usize));
-        } else {
-            mark_error_site("glBindSamplers");
-            errors().set(0x0502);
-            return;
-        }
+        f(first + i, *samplers.add(i as usize));
     }
 }
 
@@ -945,17 +992,24 @@ pub unsafe extern "C" fn glBindBuffersBase(target: u32, first: u32, count: i32, 
         errors().set(0x0501);
         return;
     }
+    if count == 0 {
+        return;
+    }
+    let bind_b = driver_fn_cached::<unsafe extern "C" fn(u32, u32)>("glBindBuffer");
+    let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32, u32)>("glBindBufferBase") else {
+        if let Some(b) = bind_b {
+            b(target, *buffers);
+        }
+        mark_error_site("glBindBuffersBase");
+        errors().set(0x0502);
+        return;
+    };
     for i in 0..count as u32 {
         let id = *buffers.add(i as usize);
-        unsafe { bind_buf(target, id) };
-        if let Some(f) = driver_fn_cached::<unsafe extern "C" fn(u32, u32, u32)>("glBindBufferBase")
-        {
-            f(target, first + i, id);
-        } else {
-            mark_error_site("glBindBuffersBase");
-            errors().set(0x0502);
-            return;
+        if let Some(b) = bind_b {
+            b(target, id);
         }
+        f(target, first + i, id);
     }
 }
 

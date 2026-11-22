@@ -1,18 +1,20 @@
-# Gurkha Launcher 1.0.1
+# ver 1.0.1 — Orbit Launcher
 
-## Community, Help, Bug Reports & Feature Requests
-- **Official Discord Server**: [https://discord.gg/7FaUJf4R9](https://discord.gg/7FaUJf4R9)
-  - Join our Discord if you need help, found any bugs to report, or want to ask us to add new features!
+This APK is **Orbit Launcher ver 1.0.1** (`versionCode=100104`, `versionName="1.0.1"`).
 
 ## Highlights
-- **No-Scroll Launch & Compact Left Navigation Rail**:
-  - Compacted the left-side navigation bar (`Home`, `Versions`, `Mods`, `Settings`, `Tools`) so all options fit without scrolling.
-  - Compacted the main launch card so the **Launch** button (`play_button`) is immediately visible without scrolling in both landscape and portrait modes.
-- **Default Landscape Mode with Switchable Portrait Mode**:
-  - The launcher now opens in landscape mode by default while keeping the top-bar and home-card orientation switch buttons so you can switch between landscape and portrait anytime.
-- **VulkanMod Compatibility Across All Versions & Native Launch Stability**:
-  - Added automatic `VulkanMod` (`net.vulkanmod`) detection (`SdlSupport.hasVulkanMod`), native `ANativeWindow` EGL-surface release before Vulkan surface creation (`gl_release_window_surface_for_vulkan` + `pojavSetWindowHint(GLFW_CLIENT_API, GLFW_NO_API)`), full GLFW Vulkan surface & extension bridge (`pojavInitVulkanLoader`, `pojavVulkanSupported`, `pojavGetRequiredInstanceExtensions`, `pojavGetInstanceProcAddress`, `pojavGetPhysicalDevicePresentationSupport`, `pojavCreateWindowSurface`), early `DynamicLinkLoader` hook initialization, and locked Android-native `libvulkan.so`, `liblwjgl_vma.so`, and `libshaderc.so` resolution across all Minecraft versions.
-  - Hardened SDL3 single-window Vulkan/OpenGL window replacement and real `libvulkan.so` handle resolution.
-- **Discord Linking, Community Server & Live Rich Presence (Application ID `1571705435713437726`)**:
-  - Added Liquid Glass Discord Linking UI (`dialog_discord_link.xml`, `DiscordPresenceManager`, `DiscordLinkDialog`) styled identically to the Gurkha Launcher UI.
-  - Connects via Discord Application ID `1571705435713437726` using your Discord ID / Username or one-step Discord Account Sign-In (no manual token pasting needed) so others on Discord see **Playing Gurkha Launcher**, plus direct access to the official Discord community (`https://discord.gg/7FaUJf4R9`).
+- **RustGL `0.3.0-gurkha.14` Sync (Minecraft 26.3 OIT & Strict GLES 3.x Support)**:
+  - Synced upstream `kushaladhikari982648-lgtm/RustGL-for-Gurkha-launcher` (`aa3fa35cf5a2144ae64bea4b438ce3abe9507c52`), legalizing desktop GLSL 330 fragment output arrays (`out vec4 fragColor[2]`) into numbered GLSL ES 3.00 outputs (`layout(location = 0) out vec4 fragColor_0`, `layout(location = 1) out vec4 fragColor_1`) for Minecraft 26.3 Order-Independent Transparency (`core/oit_add_transmittance.fsh`) on Mali, Adreno, and PowerVR GPUs.
+- **RustGL (`gl-compat`) Zero-Lock Fast-Paths & Per-Function Atomic Dispatch**:
+  - Added lock-free atomics (`CLIENT_ARRAY_MASK`, `ACTIVE_TEX_UNIT`) so `fixed_draw::try_draw_arrays` and `try_draw_elements` return immediately on modern VBO/VAO draw calls without locking mutexes or querying `glGetIntegerv(GL_CURRENT_PROGRAM)` / `GL_VERTEX_ARRAY_BINDING` from the GLES driver.
+  - Upgraded `forward_all!`, `egl_export!`, and `gl_passthrough!` with per-function static `(CACHE_GEN, CACHE_PTR)` atomic caches, added a lock-free L1 symbol cache (`DRIVER_CACHE_L1`) and `EGL_SYM_CACHE`, guarded `is_immutable_buffer` / `has_static_immutable_storage` with atomic counters, added `TEXTURE_TARGETS_FAST` for DSA texture lookups, and skipped redundant `scoped_fbo` rebinds.
+- **Hardware `ANativeWindow` Resolution Scaling, Lock-Free Window Slot, & Big-Core Affinity**:
+  - Fixed `gl_bridge.c`, `osm_bridge.c`, `egl_bridge.c`, and `MinecraftGLSurface.java` to pass the scaled `savedWidth × savedHeight` to `ANativeWindow_setBuffersGeometry` and SDL3 (`SDLSurface.surfaceChanged`) so Android's hardware Composer (`SurfaceFlinger` / HWC) upscales lower-resolution framebuffers in hardware.
+  - Made `gurkha_window_generation()` lock-free via `_Atomic uint64_t generation` (`memory_order_acquire`) on every `gl_swap_buffers()`.
+  - Upgraded `bigcoreaffinity.c` to pin the render and game threads across all performance cores (`freq >= 75%` of max CPU frequency) via `pthread_once`, enabled by default.
+  - Cached `libSDL3.so` handles/symbols in `nativeEnsureSdlKeyboardFocus`, added an `s_sdlFocusAndSizeSynced` fast path, removed per-sample `nativeEnsureSdlKeyboardFocus` calls from `CallbackBridge.sendCursorPos()`, and skipped `pojavRecordFrameIfNoExplicitSwap()` in `proxySdlPollEvent` once `sSawExplicitSwap` is set.
+- **JVM, LWJGL System Allocator, & Renderer Tuning**:
+  - Added `-Dorg.lwjgl.system.allocator=system`, `LIBGL_NOERROR=1` across all `opengles*` renderers, pre-launch `System.gc()`, conditional background `logcat` spawning (`AllSettings.enableLogOutput`), and JVM GC flags (`-XX:+PerfDisableSharedMem`, `-XX:+DisableExplicitGC`, `-XX:MaxGCPauseMillis=50`, `-XX:+UseStringDeduplication`, `-XX:+UseCompactObjectHeaders`).
+- **Orbit Launcher Rebrand, Black Theme, Escape/Input Fixes, & Discord Rich Presence**:
+  - Includes all `ver 1.0.0` improvements: Orbit Launcher branding & icons, obsidian-black liquid-glass theme, Escape/keyboard/mouse fixes in Minecraft 26.3+, VulkanMod compatibility, and Discord Rich Presence (`1571705435713437726`).
+  - Official Discord community: **https://discord.gg/7FaUJf4R9**.
