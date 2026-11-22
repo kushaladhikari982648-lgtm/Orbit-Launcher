@@ -1,5 +1,5 @@
 {
-  "sha256": "9bb0973bacf77cae808bd234a85a027af77851cace801e264eefd84032eb245c",
+  "sha256": "2a81b7de1714a800345d5ab8c40248803d5595d98c640a51d51b0570e69d0133",
   "abis": [
     "armeabi-v7a",
     "arm64-v8a",
@@ -8,11 +8,13 @@
   ],
   "repository": "kushaladhikari982648-lgtm/RustGL-for-Gurkha-launcher",
   "branch": "arena/37ea4942-rustgl-for-gurkha-launcher",
-  "commit": "70141c9602101ebdfb65296f7642bc69ac508ebb",
+  "commit": "aa3fa35cf5a2144ae64bea4b438ce3abe9507c52",
+  "version": "0.3.0-gurkha.14",
   "original": "whaltermc/rust-renderer@eb22559581cf400af29470205a9ebbff31e0db33",
   "local_changes": [
-    "Per-thread driver entry-point cache with context generation invalidation; pointer-size validation on cache hits.",
-    "GLES 3.0 negative-capability smoke mode asserts texture-buffer rejection; full modern probes remain required on 3.1/3.2."
+    "Per-thread driver entry-point cache with context generation invalidation, L1 pointer cache, and per-function gl_passthrough! atomic cache.",
+    "GLES 3.0 negative-capability smoke mode asserts texture-buffer rejection; full modern probes remain required on 3.1/3.2.",
+    "MC 26.3 OIT fragment shader array-output legalization (legalize_output_arrays) and lock-free GL/EGL/DSA hot-path dispatch."
   ],
-  "source_tree": "86d7fcb96d6e147c08282dbb45463cb67dc96626"
+  "source_tree": "694a0310326d27538a6e28707373c90f2b124252"
 }
