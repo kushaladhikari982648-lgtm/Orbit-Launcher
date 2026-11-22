@@ -27,26 +27,29 @@ macro_rules! gl_passthrough {
         $(
             #[no_mangle]
             pub unsafe extern "C" fn $name($($a: $t),*) $(-> $r)? {
-                static CACHE_GEN: core::sync::atomic::AtomicUsize =
-                    core::sync::atomic::AtomicUsize::new(0);
-                static CACHE_PTR: core::sync::atomic::AtomicUsize =
-                    core::sync::atomic::AtomicUsize::new(0);
-                let g = $crate::driver_cache_generation();
-                let mut p = if CACHE_GEN.load(core::sync::atomic::Ordering::Relaxed) == g {
-                    CACHE_PTR.load(core::sync::atomic::Ordering::Relaxed)
-                } else {
-                    0
-                };
-                if p == 0 {
-                    p = $crate::driver_fn_raw_cached(stringify!($name));
-                    CACHE_PTR.store(p, core::sync::atomic::Ordering::Relaxed);
-                    CACHE_GEN.store(g, core::sync::atomic::Ordering::Relaxed);
+                type F = unsafe extern "C" fn($($t),*) $(-> $r)?;
+                static CACHE_GEN: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                static CACHE_PTR: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                let gen = $crate::DRIVER_CACHE_GENERATION
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if CACHE_GEN.load(std::sync::atomic::Ordering::Relaxed) == gen {
+                    let addr = CACHE_PTR.load(std::sync::atomic::Ordering::Relaxed);
+                    if addr != 0 {
+                        $crate::trace_call(stringify!($name));
+                        let f: F = std::mem::transmute_copy(&addr);
+                        return f($($a),*);
+                    }
                 }
-                if p != 0 {
-                    let f: unsafe extern "C" fn($($t),*) $(-> $r)? = core::mem::transmute(p);
-                    f($($a),*)
-                } else {
-                    $crate::khr::announce_missing(stringify!($name))
+                match $crate::driver_fn_cached::<F>(stringify!($name)) {
+                    Some(f) => {
+                        let addr: usize = std::mem::transmute_copy(&f);
+                        CACHE_PTR.store(addr, std::sync::atomic::Ordering::Relaxed);
+                        CACHE_GEN.store(gen, std::sync::atomic::Ordering::Release);
+                        f($($a),*)
+                    }
+                    None => $crate::khr::announce_missing(stringify!($name)),
                 }
             }
         )*

@@ -789,7 +789,7 @@ pub(crate) fn probe_shader_target_is_es_for_test(version: &str) -> bool {
 // are deliberately not retained. Borrow scopes end before calling the driver.
 type DriverCache = std::collections::HashMap<&'static [u8], usize>;
 const DRIVER_L1_SLOTS: usize = 128;
-static DRIVER_CACHE_GENERATION: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+pub(crate) static DRIVER_CACHE_GENERATION: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
 thread_local! {
     static DRIVER_CACHE: std::cell::RefCell<(usize, DriverCache)> =
         std::cell::RefCell::new((usize::MAX, DriverCache::new()));
