@@ -16,6 +16,9 @@ public final class GameplayRecorder {
     private final Surface source;
     private final File folder;
     private final Listener listener;
+    private final int qualityHeight;
+    private final int targetFps;
+    private long frameDelayMs = 33L;
     private final HandlerThread thread = new HandlerThread("GameplayRecorder");
     private final Handler main = new Handler(Looper.getMainLooper());
     private Handler worker;
@@ -40,8 +43,14 @@ public final class GameplayRecorder {
         return dir;
     }
     public GameplayRecorder(Context context, Surface source, int width, int height, Listener listener) {
+        this(context, source, width, height, MediaPolicy.QUALITY_720P, MediaPolicy.FPS_30, listener);
+    }
+    public GameplayRecorder(Context context, Surface source, int width, int height, int qualityHeight, int targetFps, Listener listener) {
         if(source==null || !source.isValid()) throw new IllegalStateException("Game surface is not ready");
         this.source=source; this.listener=listener; this.folder=directory(context);
+        this.qualityHeight=MediaPolicy.normalizeRecordingQuality(qualityHeight);
+        this.targetFps=MediaPolicy.normalizeRecordingFps(this.qualityHeight, targetFps);
+        this.frameDelayMs=MediaPolicy.frameDelayMs(this.targetFps);
         thread.start(); worker=new Handler(thread.getLooper());
         worker.post(() -> { try { prepare(width,height); nextFrame(); } catch(Exception e) { fail(e); } });
     }
@@ -51,35 +60,48 @@ public final class GameplayRecorder {
     }
     private void prepare(int originalWidth,int originalHeight) throws Exception {
         if(folder.getUsableSpace()<20L*1024*1024) throw new IllegalStateException("At least 20 MB free space is required");
-        int[] size=MediaPolicy.recordingSize(originalWidth,originalHeight);
+        int[][] candidateProfiles = new int[][]{
+                {qualityHeight, targetFps},
+                {qualityHeight, MediaPolicy.FPS_30},
+                {MediaPolicy.QUALITY_720P, MediaPolicy.FPS_30},
+                {MediaPolicy.QUALITY_480P, 15}
+        };
         Exception last=null;
-        for(MediaCodecInfo candidate:new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
-            if(!candidate.isEncoder()) continue;
-            try {
-                MediaCodecInfo.CodecCapabilities caps=candidate.getCapabilitiesForType("video/avc");
-                boolean surface=false;
-                for(int format:caps.colorFormats) if(format==MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface) surface=true;
-                if(!surface) continue;
-                MediaCodecInfo.VideoCapabilities video=caps.getVideoCapabilities();
-                int w=size[0]/video.getWidthAlignment()*video.getWidthAlignment();
-                int h=size[1]/video.getHeightAlignment()*video.getHeightAlignment();
-                if(w<2 || h<2 || !video.areSizeAndRateSupported(w,h,15)) continue;
-                codec=MediaCodec.createByCodecName(candidate.getName());
-                MediaFormat format=MediaFormat.createVideoFormat("video/avc",w,h);
-                format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-                format.setInteger(MediaFormat.KEY_BIT_RATE,video.getBitrateRange().clamp(1500000));
-                format.setInteger(MediaFormat.KEY_FRAME_RATE,15); format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,2);
-                codec.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
-                input=codec.createInputSurface(); codec.start();
-                canvas=new EncoderCanvas(input,w,h);
-                bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
-                break;
-            } catch(Exception e) {
-                last=e;
-                if(canvas!=null) { canvas.close(); canvas=null; }
-                if(input!=null) { input.release(); input=null; }
-                if(codec!=null) { try { codec.release(); } catch(Exception ignored) {} codec=null; }
+        for(int[] profile : candidateProfiles) {
+            int tier = profile[0];
+            int fps = profile[1];
+            int[] size = MediaPolicy.recordingSize(originalWidth, originalHeight, tier);
+            int targetBitrate = MediaPolicy.recordingBitrate(tier, fps);
+            for(MediaCodecInfo candidate:new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
+                if(!candidate.isEncoder()) continue;
+                try {
+                    MediaCodecInfo.CodecCapabilities caps=candidate.getCapabilitiesForType("video/avc");
+                    boolean surface=false;
+                    for(int format:caps.colorFormats) if(format==MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface) surface=true;
+                    if(!surface) continue;
+                    MediaCodecInfo.VideoCapabilities video=caps.getVideoCapabilities();
+                    int w=size[0]/video.getWidthAlignment()*video.getWidthAlignment();
+                    int h=size[1]/video.getHeightAlignment()*video.getHeightAlignment();
+                    if(w<2 || h<2 || !video.areSizeAndRateSupported(w,h,fps)) continue;
+                    codec=MediaCodec.createByCodecName(candidate.getName());
+                    MediaFormat format=MediaFormat.createVideoFormat("video/avc",w,h);
+                    format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+                    format.setInteger(MediaFormat.KEY_BIT_RATE,video.getBitrateRange().clamp(targetBitrate));
+                    format.setInteger(MediaFormat.KEY_FRAME_RATE,fps); format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,2);
+                    codec.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
+                    input=codec.createInputSurface(); codec.start();
+                    canvas=new EncoderCanvas(input,w,h);
+                    bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
+                    frameDelayMs=MediaPolicy.frameDelayMs(fps);
+                    break;
+                } catch(Exception e) {
+                    last=e;
+                    if(canvas!=null) { canvas.close(); canvas=null; }
+                    if(input!=null) { input.release(); input=null; }
+                    if(codec!=null) { try { codec.release(); } catch(Exception ignored) {} codec=null; }
+                }
             }
+            if(codec!=null && canvas!=null && bitmap!=null) break;
         }
         if(codec==null || canvas==null || bitmap==null) throw new IllegalStateException("No compatible AVC surface encoder on this device",last);
         output=new File(folder,"Gurkha-"+System.currentTimeMillis()+"-"+UUID.randomUUID()+".mp4");
@@ -107,7 +129,7 @@ public final class GameplayRecorder {
                     } else if(result==PixelCopy.ERROR_SOURCE_NO_DATA && ++misses<30) {
                         // First frame may not have been presented yet. Keep just one request in flight.
                     } else throw new IllegalStateException("Gameplay-only capture is unavailable (PixelCopy "+result+"). No full-screen fallback was used.");
-                    worker.postDelayed(this::nextFrame,67);
+                    worker.postDelayed(this::nextFrame,frameDelayMs);
                 } catch(Exception e) { fail(e); }
             },worker);
         } catch(Exception e) { copying=false; fail(e); }

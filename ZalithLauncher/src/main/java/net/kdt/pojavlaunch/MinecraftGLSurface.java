@@ -152,6 +152,10 @@ public class MinecraftGLSurface extends View implements GrabListener {
                 @Override
                 public void surfaceCreated(@NonNull SurfaceHolder holder) {
                     mNativeSurface = holder.getSurface();
+                    if (!mIsRenderingStarted) {
+                        mIsRenderingStarted = true;
+                        if (mOnRenderingStartedListener != null) mOnRenderingStartedListener.isStarted();
+                    }
                     if (!isCalled) setupSDL(getContext(), mNativeSurface, (ViewGroup) getParent());
                     if (sdlVersion) SDLSurface.setNativeSurface(mNativeSurface);
                     if(isCalled) {
@@ -451,6 +455,12 @@ public class MinecraftGLSurface extends View implements GrabListener {
         MCOptions.INSTANCE.set("fullscreen", "false");
         MCOptions.INSTANCE.set("overrideWidth", String.valueOf(windowWidth));
         MCOptions.INSTANCE.set("overrideHeight", String.valueOf(windowHeight));
+        if (!AllSettings.getForceVsync().getValue()) {
+            MCOptions.INSTANCE.set("enableVsync", "false");
+            if (!MCOptions.INSTANCE.containsKey("maxFps")) {
+                MCOptions.INSTANCE.set("maxFps", "260");
+            }
+        }
         String graphicsBackend = com.movtery.zalithlauncher.launch.GraphicsBackend.resolveBackend();
         MCOptions.INSTANCE.set(com.movtery.zalithlauncher.launch.GraphicsBackend.OPTION, "\"" + graphicsBackend + "\"");
         MCOptions.INSTANCE.set(com.movtery.zalithlauncher.launch.GraphicsBackend.STARTED_CLEANLY_OPTION, "true");

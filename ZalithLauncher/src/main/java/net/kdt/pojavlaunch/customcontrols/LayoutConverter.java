@@ -1,10 +1,13 @@
 package net.kdt.pojavlaunch.customcontrols;
 
 import android.content.Context;
+import android.view.KeyEvent;
 
 import com.google.gson.JsonSyntaxException;
 import com.movtery.zalithlauncher.R;
+import com.movtery.zalithlauncher.ui.subassembly.customcontrols.ControlInfoData;
 
+import net.kdt.pojavlaunch.EfficientAndroidLWJGLKeycode;
 import net.kdt.pojavlaunch.LwjglGlfwKeycode;
 import net.kdt.pojavlaunch.Tools;
 
@@ -14,15 +17,64 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.lwjgl.glfw.CallbackBridge;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class LayoutConverter {
-    public static CustomControls loadAndConvertIfNecessary(Context ctx, String jsonPath) throws IOException, JsonSyntaxException {
+    /** MJ Launcher (MojoLauncher) special button for keyboard pan. */
+    private static final int MOJO_SPECIALBTN_KEYBOARDPAN = -10;
 
-        String jsonLayoutData = Tools.read(jsonPath);
+    /**
+     * Reads raw layout JSON from a file, transparently extracting {@code layout.json}
+     * when the file is a ZIP-wrapped MJ Launcher (MojoLauncher) control package.
+     */
+    public static String readLayoutJsonFromFile(File file) throws IOException {
+        byte[] bytes;
+        try (InputStream is = new FileInputStream(file)) {
+            bytes = IOUtils.toByteArray(is);
+        }
+        if (bytes.length >= 4
+                && bytes[0] == 0x50
+                && bytes[1] == 0x4B
+                && bytes[2] == 0x03
+                && bytes[3] == 0x04) {
+            String fallbackJson = null;
+            try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    if (entry.isDirectory()) continue;
+                    String entryName = entry.getName();
+                    if ("layout.json".equalsIgnoreCase(entryName) || entryName.endsWith("/layout.json")) {
+                        return stripUtf8Bom(IOUtils.toString(zis, StandardCharsets.UTF_8));
+                    }
+                    if (fallbackJson == null && entryName.toLowerCase().endsWith(".json")) {
+                        fallbackJson = stripUtf8Bom(IOUtils.toString(zis, StandardCharsets.UTF_8));
+                    }
+                }
+            }
+            if (fallbackJson != null) {
+                return fallbackJson;
+            }
+        }
+        return stripUtf8Bom(new String(bytes, StandardCharsets.UTF_8));
+    }
+
+    private static String stripUtf8Bom(String s) {
+        if (s != null && !s.isEmpty() && s.charAt(0) == '\uFEFF') {
+            return s.substring(1);
+        }
+        return s;
+    }
+
+    public static CustomControls loadAndConvertIfNecessary(Context ctx, String jsonPath) throws IOException, JsonSyntaxException {
+        String jsonLayoutData = readLayoutJsonFromFile(new File(jsonPath));
         try {
             JSONObject layoutJobj = new JSONObject(jsonLayoutData);
             return loadAndConvertIfNecessary(ctx, layoutJobj, jsonLayoutData, jsonPath, true);
@@ -56,29 +108,193 @@ public class LayoutConverter {
     private static CustomControls loadAndConvertIfNecessary(Context ctx, JSONObject layoutJobj, String jsonLayoutData, String jsonPath, boolean showError) throws Exception {
         if (!layoutJobj.has("version")) { //v1 layout
             CustomControls layout = LayoutConverter.convertV1Layout(layoutJobj);
+            normalizeLayout(layout, jsonPath);
             if (jsonPath != null) layout.save(jsonPath);
             return layout;
         } else {
             int version = layoutJobj.getInt("version");
             if (version == 2) {
                 CustomControls layout = LayoutConverter.convertV2Layout(layoutJobj);
+                normalizeLayout(layout, jsonPath);
                 if (jsonPath != null) layout.save(jsonPath);
                 return layout;
             }
             if (version == 3 || version == 4 || version == 5) {
-                return LayoutConverter.convertV3_4Layout(layoutJobj);
+                CustomControls layout = LayoutConverter.convertV3_4Layout(layoutJobj);
+                normalizeLayout(layout, jsonPath);
+                return layout;
             }
             if (version == 6 || version == 7) {
-                return convertV6_7Layout(layoutJobj);
+                CustomControls layout = convertV6_7Layout(layoutJobj);
+                normalizeLayout(layout, jsonPath);
+                return layout;
+            }
+            if (version == 9 || isMojoAndroidKeycodeLayout(layoutJobj, version)) {
+                CustomControls layout = convertV9MojoLayout(layoutJobj, jsonPath);
+                if (jsonPath != null) layout.save(jsonPath);
+                return layout;
             }
             if (version == 8) {
-                return Tools.GLOBAL_GSON.fromJson(jsonLayoutData, CustomControls.class);
+                CustomControls layout = Tools.GLOBAL_GSON.fromJson(jsonLayoutData, CustomControls.class);
+                normalizeLayout(layout, jsonPath);
+                return layout;
             }
-            if (showError) {
+            if (showError && ctx != null) {
                 IOException ioException = new IOException();
                 Tools.showError(ctx, ctx.getString(R.string.controls_unsupported_layout_version), ioException);
             }
             return null;
+        }
+    }
+
+    /**
+     * Detects MJ Launcher (MojoLauncher) v9 layouts (or v8 layouts exported with Android KeyEvent keycodes).
+     */
+    public static boolean isMojoAndroidKeycodeLayout(JSONObject layoutJobj, int version) {
+        if (version == 9) return true;
+        if (version != 8 || layoutJobj.has("mControlInfoDataList")) return false;
+        JSONArray buttons = layoutJobj.optJSONArray("mControlDataList");
+        if (buttons == null) return false;
+        for (int i = 0; i < buttons.length(); i++) {
+            JSONObject btn = buttons.optJSONObject(i);
+            if (btn == null) continue;
+            JSONArray keycodes = btn.optJSONArray("keycodes");
+            if (keycodes == null) continue;
+            for (int j = 0; j < keycodes.length(); j++) {
+                int kc = keycodes.optInt(j, 0);
+                if (kc == MOJO_SPECIALBTN_KEYBOARDPAN) return true;
+                if (kc > 0 && kc < LwjglGlfwKeycode.GLFW_KEY_SPACE) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Converts an MJ Launcher (MojoLauncher) v9 layout (where positive keycodes are Android
+     * {@link KeyEvent} constants and {@code -10} is {@code SPECIALBTN_KEYBOARDPAN}) into an
+     * Orbit/Zalith v8 layout using {@link LwjglGlfwKeycode} values and populated {@link ControlInfoData}.
+     */
+    public static CustomControls convertV9MojoLayout(JSONObject oldLayoutJson, String jsonPath) {
+        CustomControls layout = Tools.GLOBAL_GSON.fromJson(oldLayoutJson.toString(), CustomControls.class);
+        if (layout == null) {
+            layout = new CustomControls();
+        }
+        normalizeLayout(layout, jsonPath);
+        for (ControlData button : layout.mControlDataList) {
+            if (button != null) {
+                convertMojoControlData(button);
+            }
+        }
+        for (ControlDrawerData drawer : layout.mDrawerDataList) {
+            if (drawer == null) continue;
+            if (drawer.properties != null) {
+                convertMojoControlData(drawer.properties);
+            }
+            if (drawer.buttonProperties != null) {
+                for (ControlData subButton : drawer.buttonProperties) {
+                    if (subButton != null) {
+                        convertMojoControlData(subButton);
+                    }
+                }
+            }
+        }
+        for (ControlJoystickData joystick : layout.mJoystickDataList) {
+            if (joystick != null && joystick.forwardLockKeycode > 0) {
+                joystick.forwardLockKeycode = mojoAndroidToGlfw(joystick.forwardLockKeycode);
+            }
+        }
+        layout.version = 8;
+        return layout;
+    }
+
+    private static void convertMojoControlData(ControlData data) {
+        if (data.keycodes == null) {
+            data.keycodes = new int[4];
+            return;
+        }
+        for (int i = 0; i < data.keycodes.length; i++) {
+            int kc = data.keycodes[i];
+            if (kc > 0) {
+                data.keycodes[i] = mojoAndroidToGlfw(kc);
+            } else if (kc == MOJO_SPECIALBTN_KEYBOARDPAN) {
+                data.keycodes[i] = ControlData.SPECIALBTN_KEYBOARD;
+            }
+        }
+    }
+
+    /**
+     * Converts an Android {@link KeyEvent} keycode used by MJ Launcher into the corresponding
+     * {@link LwjglGlfwKeycode} constant.
+     */
+    public static int mojoAndroidToGlfw(int androidKeycode) {
+        if (androidKeycode <= 0) {
+            return androidKeycode == MOJO_SPECIALBTN_KEYBOARDPAN
+                    ? ControlData.SPECIALBTN_KEYBOARD
+                    : LwjglGlfwKeycode.GLFW_KEY_UNKNOWN;
+        }
+        int idx = EfficientAndroidLWJGLKeycode.getIndexByKey(androidKeycode);
+        if (idx >= 0) {
+            return EfficientAndroidLWJGLKeycode.getValueByIndex(idx);
+        }
+        switch (androidKeycode) {
+            case KeyEvent.KEYCODE_FORWARD_DEL:
+                return LwjglGlfwKeycode.GLFW_KEY_DELETE;
+            case KeyEvent.KEYCODE_SCROLL_LOCK:
+                return LwjglGlfwKeycode.GLFW_KEY_SCROLL_LOCK;
+            case KeyEvent.KEYCODE_META_LEFT:
+                return LwjglGlfwKeycode.GLFW_KEY_LEFT_SUPER;
+            case KeyEvent.KEYCODE_META_RIGHT:
+                return LwjglGlfwKeycode.GLFW_KEY_RIGHT_SUPER;
+            case KeyEvent.KEYCODE_SYSRQ:
+                return LwjglGlfwKeycode.GLFW_KEY_PRINT_SCREEN;
+            case KeyEvent.KEYCODE_MENU:
+                return LwjglGlfwKeycode.GLFW_KEY_MENU;
+            default:
+                return androidKeycode >= LwjglGlfwKeycode.GLFW_KEY_SPACE
+                        ? androidKeycode
+                        : LwjglGlfwKeycode.GLFW_KEY_UNKNOWN;
+        }
+    }
+
+    private static void normalizeLayout(CustomControls layout, String jsonPath) {
+        if (layout == null) return;
+        if (layout.mControlDataList == null) layout.mControlDataList = new ArrayList<>();
+        if (layout.mDrawerDataList == null) layout.mDrawerDataList = new ArrayList<>();
+        if (layout.mJoystickDataList == null) layout.mJoystickDataList = new ArrayList<>();
+        if (layout.mControlInfoDataList == null) {
+            layout.mControlInfoDataList = new ControlInfoData();
+        }
+        String fallbackFileName = null;
+        if (jsonPath != null && !jsonPath.isEmpty()) {
+            fallbackFileName = new File(jsonPath).getName();
+        }
+        if (layout.mControlInfoDataList.fileName == null
+                || layout.mControlInfoDataList.fileName.isEmpty()
+                || "null".equals(layout.mControlInfoDataList.fileName)) {
+            layout.mControlInfoDataList.fileName = fallbackFileName != null ? fallbackFileName : "default.json";
+        }
+        if (layout.mControlInfoDataList.name == null
+                || layout.mControlInfoDataList.name.isEmpty()
+                || "null".equals(layout.mControlInfoDataList.name)
+                || "empty".equals(layout.mControlInfoDataList.name)) {
+            if (fallbackFileName != null) {
+                int dot = fallbackFileName.lastIndexOf('.');
+                layout.mControlInfoDataList.name = dot > 0 ? fallbackFileName.substring(0, dot) : fallbackFileName;
+            } else {
+                layout.mControlInfoDataList.name = "empty";
+            }
+        }
+        if (layout.mControlInfoDataList.version == null) layout.mControlInfoDataList.version = "null";
+        if (layout.mControlInfoDataList.author == null) layout.mControlInfoDataList.author = "null";
+        if (layout.mControlInfoDataList.desc == null) layout.mControlInfoDataList.desc = "null";
+        for (ControlData button : layout.mControlDataList) {
+            if (button != null && button.keycodes != null) {
+                for (int i = 0; i < button.keycodes.length; i++) {
+                    if (button.keycodes[i] == MOJO_SPECIALBTN_KEYBOARDPAN) {
+                        button.keycodes[i] = ControlData.SPECIALBTN_KEYBOARD;
+                    }
+                }
+            }
         }
     }
 

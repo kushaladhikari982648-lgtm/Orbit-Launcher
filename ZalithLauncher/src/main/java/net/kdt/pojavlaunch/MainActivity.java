@@ -110,6 +110,9 @@ public class MainActivity extends BaseActivity implements ControlButtonMenuListe
     private android.widget.Button recordButton;
     private boolean recorderStopping;
 
+    private int selectedRecorderQuality = com.movtery.zalithlauncher.feature.media.MediaPolicy.QUALITY_720P;
+    private int selectedRecorderFps = com.movtery.zalithlauncher.feature.media.MediaPolicy.FPS_30;
+
     private void stopGameplayRecording() {
         if (gameplayRecorder != null) {
             recorderStopping = true;
@@ -121,14 +124,83 @@ public class MainActivity extends BaseActivity implements ControlButtonMenuListe
     private void toggleGameplayRecording() {
         if (recorderStopping) return;
         if (gameplayRecorder != null) { stopGameplayRecording(); return; }
+
+        int pad = (int) Tools.dpToPx(16);
+        android.widget.LinearLayout root = new android.widget.LinearLayout(this);
+        root.setOrientation(android.widget.LinearLayout.VERTICAL);
+        root.setPadding(pad, pad / 2, pad, 0);
+
+        android.widget.TextView helpView = new android.widget.TextView(this);
+        helpView.setText(R.string.recorder_help);
+        root.addView(helpView);
+
+        android.widget.TextView qualityLabel = new android.widget.TextView(this);
+        qualityLabel.setText(R.string.recorder_quality_label);
+        qualityLabel.setPadding(0, pad / 2, 0, 0);
+        qualityLabel.setTypeface(qualityLabel.getTypeface(), android.graphics.Typeface.BOLD);
+        root.addView(qualityLabel);
+
+        android.widget.RadioGroup qualityGroup = new android.widget.RadioGroup(this);
+        qualityGroup.setOrientation(android.widget.RadioGroup.HORIZONTAL);
+        android.widget.RadioButton radio720p = new android.widget.RadioButton(this);
+        radio720p.setId(View.generateViewId());
+        radio720p.setText(R.string.recorder_quality_720p);
+        android.widget.RadioButton radio1080p = new android.widget.RadioButton(this);
+        radio1080p.setId(View.generateViewId());
+        radio1080p.setText(R.string.recorder_quality_1080p);
+        qualityGroup.addView(radio720p);
+        qualityGroup.addView(radio1080p);
+        root.addView(qualityGroup);
+
+        android.widget.TextView fpsLabel = new android.widget.TextView(this);
+        fpsLabel.setText(R.string.recorder_fps_label);
+        fpsLabel.setPadding(0, pad / 2, 0, 0);
+        fpsLabel.setTypeface(fpsLabel.getTypeface(), android.graphics.Typeface.BOLD);
+        root.addView(fpsLabel);
+
+        android.widget.RadioGroup fpsGroup = new android.widget.RadioGroup(this);
+        fpsGroup.setOrientation(android.widget.RadioGroup.HORIZONTAL);
+        android.widget.RadioButton radio30Fps = new android.widget.RadioButton(this);
+        radio30Fps.setId(View.generateViewId());
+        radio30Fps.setText(R.string.recorder_fps_30);
+        android.widget.RadioButton radio60Fps = new android.widget.RadioButton(this);
+        radio60Fps.setId(View.generateViewId());
+        radio60Fps.setText(R.string.recorder_fps_60);
+        fpsGroup.addView(radio30Fps);
+        fpsGroup.addView(radio60Fps);
+        root.addView(fpsGroup);
+
+        boolean is1080 = selectedRecorderQuality >= com.movtery.zalithlauncher.feature.media.MediaPolicy.QUALITY_1080P;
+        qualityGroup.check(is1080 ? radio1080p.getId() : radio720p.getId());
+        radio60Fps.setEnabled(is1080);
+        fpsGroup.check(is1080 && selectedRecorderFps >= com.movtery.zalithlauncher.feature.media.MediaPolicy.FPS_60
+                ? radio60Fps.getId() : radio30Fps.getId());
+
+        qualityGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            boolean allow60 = checkedId == radio1080p.getId();
+            radio60Fps.setEnabled(allow60);
+            if (!allow60 && fpsGroup.getCheckedRadioButtonId() == radio60Fps.getId()) {
+                fpsGroup.check(radio30Fps.getId());
+            }
+        });
+
         new androidx.appcompat.app.AlertDialog.Builder(this).setTitle(R.string.recorder_start)
-            .setMessage(R.string.recorder_help).setNegativeButton(android.R.string.cancel, null)
+            .setView(root).setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                 if (gameplayRecorder != null || isFinishing() || isDestroyed()) return;
+                selectedRecorderQuality = qualityGroup.getCheckedRadioButtonId() == radio1080p.getId()
+                        ? com.movtery.zalithlauncher.feature.media.MediaPolicy.QUALITY_1080P
+                        : com.movtery.zalithlauncher.feature.media.MediaPolicy.QUALITY_720P;
+                int requestedFps = fpsGroup.getCheckedRadioButtonId() == radio60Fps.getId()
+                        ? com.movtery.zalithlauncher.feature.media.MediaPolicy.FPS_60
+                        : com.movtery.zalithlauncher.feature.media.MediaPolicy.FPS_30;
+                selectedRecorderFps = com.movtery.zalithlauncher.feature.media.MediaPolicy.normalizeRecordingFps(
+                        selectedRecorderQuality, requestedFps);
                 try {
                     gameplayRecorder = new com.movtery.zalithlauncher.feature.media.GameplayRecorder(
                         this, binding.mainGameRenderView.getGameplayCaptureSurface(),
-                        CallbackBridge.windowWidth, CallbackBridge.windowHeight, (video, error) -> {
+                        CallbackBridge.windowWidth, CallbackBridge.windowHeight,
+                        selectedRecorderQuality, selectedRecorderFps, (video, error) -> {
                             gameplayRecorder = null; recorderStopping = false;
                             if (isFinishing() || isDestroyed()) return;
                             recordButton.setEnabled(true); recordButton.setText(R.string.recorder_start);

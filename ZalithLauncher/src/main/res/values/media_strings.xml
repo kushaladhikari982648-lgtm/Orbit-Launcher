@@ -20,7 +20,13 @@
     <string name="recorder_start">Record gameplay</string>
     <string name="recorder_stop">Stop recording</string>
     <string name="recorder_finishing">Saving recording…</string>
-    <string name="recorder_help">Record only the Minecraft game surface, excluding launcher touch controls and menus. Minecraft HUD, chat and in-game menus remain visible. Silent MP4, up to 480p / 15 fps, maximum 10 minutes. May reduce FPS on low-end phones. Stops when leaving the game. Requires a working surface capture and AVC encoder; unsupported devices report an error instead of recording the full screen.</string>
+    <string name="recorder_help">Record only the Minecraft game surface, excluding launcher touch controls and menus. Minecraft HUD, chat and in-game menus remain visible. Silent MP4 (720p at 30 FPS, or 1080p at 30/60 FPS), maximum 10 minutes. Stops when leaving the game.</string>
+    <string name="recorder_quality_label">Video Quality</string>
+    <string name="recorder_quality_720p">720p (HD)</string>
+    <string name="recorder_quality_1080p">1080p (Full HD)</string>
+    <string name="recorder_fps_label">Frame Rate</string>
+    <string name="recorder_fps_30">30 FPS</string>
+    <string name="recorder_fps_60">60 FPS (1080p only)</string>
     <string name="recorder_started">Gameplay recording requested. Use Stop recording in the game menu to finish.</string>
     <string name="recorder_saved">Video saved to Recordings. Open Recordings to share or delete it.</string>
     <string name="recorder_library">Recordings</string>

@@ -242,8 +242,8 @@ EXPORT EGLBoolean eglChooseConfig(EGLDisplay dpy, const EGLint *attrib_list, EGL
 EXPORT EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list) {
     if (!init()) return (EGLContext)0;
 
-    // Always normalize context attributes to OpenGL ES 3.0 (with fallback to pure EGL 1.4 ES3 / ES2),
-    // even when SDL bound EGL_OPENGL_ES_API directly and passed desktop minor/flags attributes (e.g. 3.3 + forward-compatible).
+    // Normalize context attributes to OpenGL ES 3.x without forcing minor version 0 first,
+    // so ES 3.2 / ES 3.1 drivers unlock hardware glDrawElementsBaseVertex and compute shaders in LTW.
     EGLint attribs[MAX_ATTRIBS + 4];
     const EGLint drop[] = {
             EGL_CONTEXT_CLIENT_VERSION, // same value as EGL_CONTEXT_MAJOR_VERSION_KHR
@@ -253,17 +253,16 @@ EXPORT EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext 
             EGL_CONTEXT_OPENGL_NO_ERROR_KHR,
     };
     filter_attribs(attrib_list, attribs + 4, drop, sizeof(drop) / sizeof(drop[0]));
-    attribs[0] = EGL_CONTEXT_CLIENT_VERSION;
-    attribs[1] = 3;
-    attribs[2] = EGL_CONTEXT_MINOR_VERSION_KHR;
-    attribs[3] = 0;
     if (!host_eglBindAPI(EGL_OPENGL_ES_API)) return EGL_NO_CONTEXT;
-    EGLContext context = ltw_eglCreateContext(dpy, config, share_context, attribs);
+    attribs[2] = EGL_CONTEXT_CLIENT_VERSION;
+    attribs[3] = 3;
+    EGLContext context = ltw_eglCreateContext(dpy, config, share_context, attribs + 2);
     if (context == EGL_NO_CONTEXT) {
-        // Retry without EGL_CONTEXT_MINOR_VERSION_KHR for strict EGL 1.4 drivers
-        attribs[2] = EGL_CONTEXT_CLIENT_VERSION;
-        attribs[3] = 3;
-        context = ltw_eglCreateContext(dpy, config, share_context, attribs + 2);
+        attribs[0] = EGL_CONTEXT_CLIENT_VERSION;
+        attribs[1] = 3;
+        attribs[2] = EGL_CONTEXT_MINOR_VERSION_KHR;
+        attribs[3] = 0;
+        context = ltw_eglCreateContext(dpy, config, share_context, attribs);
     }
     if (context == EGL_NO_CONTEXT) {
         // Fallback to OpenGL ES 2.0 context attributes if ES 3 attribute rejected
@@ -284,9 +283,18 @@ EXPORT EGLBoolean eglDestroyContext(EGLDisplay dpy, EGLContext ctx) {
     return ltw_eglDestroyContext(dpy, ctx);
 }
 
+static bool is_force_vsync_enabled(void) {
+    const char *env = getenv("FORCE_VSYNC");
+    return env != NULL && strcmp(env, "true") == 0;
+}
+
 EXPORT EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
     if (!init()) return (EGLBoolean)0;
-    return ltw_eglMakeCurrent(dpy, draw, read, ctx);
+    EGLBoolean res = ltw_eglMakeCurrent(dpy, draw, read, ctx);
+    if (res && ctx != EGL_NO_CONTEXT && draw != EGL_NO_SURFACE && host_eglSwapInterval != NULL) {
+        host_eglSwapInterval(dpy, is_force_vsync_enabled() ? 1 : 0);
+    }
+    return res;
 }
 
 // sRGB window surfaces are not needed with LTW and are refused by some drivers for these contexts
@@ -360,7 +368,12 @@ FORWARD(EGLBoolean, eglWaitNative, (EGLint engine), (engine))
 FORWARD(EGLBoolean, eglBindTexImage, (EGLDisplay dpy, EGLSurface surface, EGLint buffer), (dpy, surface, buffer))
 FORWARD(EGLBoolean, eglReleaseTexImage, (EGLDisplay dpy, EGLSurface surface, EGLint buffer), (dpy, surface, buffer))
 FORWARD(EGLBoolean, eglSurfaceAttrib, (EGLDisplay dpy, EGLSurface surface, EGLint attribute, EGLint value), (dpy, surface, attribute, value))
-FORWARD(EGLBoolean, eglSwapInterval, (EGLDisplay dpy, EGLint interval), (dpy, interval))
+EXPORT EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval) {
+    (void) interval;
+    if (!init()) return (EGLBoolean)0;
+    if (host_eglSwapInterval == NULL) return (EGLBoolean)0;
+    return host_eglSwapInterval(dpy, is_force_vsync_enabled() ? 1 : 0);
+}
 FORWARD(EGLSurface, eglCreatePbufferFromClientBuffer, (EGLDisplay dpy, EGLenum buftype, EGLClientBuffer buffer, EGLConfig config, const EGLint *attrib_list), (dpy, buftype, buffer, config, attrib_list))
 FORWARD(EGLBoolean, eglReleaseThread, (void), ())
 FORWARD(EGLBoolean, eglWaitClient, (void), ())
@@ -388,6 +401,7 @@ static const struct {
         { "eglCreateContext", (proc_t) eglCreateContext },
         { "eglDestroyContext", (proc_t) eglDestroyContext },
         { "eglMakeCurrent", (proc_t) eglMakeCurrent },
+        { "eglSwapInterval", (proc_t) eglSwapInterval },
         { "eglCreateWindowSurface", (proc_t) eglCreateWindowSurface },
         { "eglCreatePbufferSurface", (proc_t) eglCreatePbufferSurface },
         { "eglCreatePlatformWindowSurface", (proc_t) eglCreatePlatformWindowSurface },

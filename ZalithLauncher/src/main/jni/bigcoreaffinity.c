@@ -60,11 +60,12 @@ static void compute_bigcore_set(void) {
     }
 
     CPU_ZERO(&s_bigcore_set);
-    // Include all performance/prime cores (>= 75% of peak core frequency) and exclude LITTLE cores.
-    unsigned long threshold = (max_freq * 75UL) / 100UL;
+    // Include all Big/Performance and Prime cores (any core clocked above the LITTLE cluster's
+    // min_freq) so tri-cluster SoCs (1 Prime + 3 Big + 4 Little) never pin the render thread
+    // to only a single Prime core while still excluding all LITTLE efficiency cores.
     unsigned int selected = 0;
     for (unsigned int i = 0; i < corecnt; i++) {
-        if (core_freqs[i] >= threshold) {
+        if (core_freqs[i] > min_freq) {
             CPU_SET_S(i, CPU_SETSIZE, &s_bigcore_set);
             selected++;
         }

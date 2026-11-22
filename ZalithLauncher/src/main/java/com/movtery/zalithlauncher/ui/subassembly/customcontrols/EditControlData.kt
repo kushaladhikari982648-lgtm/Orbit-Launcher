@@ -24,7 +24,7 @@ class EditControlData {
         @JvmStatic
         fun loadCustomControlsFromFile(context: Context?, file: File): CustomControls? {
             runCatching {
-                val jsonLayoutData = Tools.read(file)
+                val jsonLayoutData = LayoutConverter.readLayoutJsonFromFile(file)
                 val layoutJsonObject = JSONObject(jsonLayoutData)
                 return LayoutConverter.loadFromJsonObject(context, layoutJsonObject, jsonLayoutData, file.absolutePath, false)
             }.getOrElse { e ->

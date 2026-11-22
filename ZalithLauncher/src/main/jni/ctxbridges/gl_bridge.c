@@ -179,6 +179,9 @@ void gl_make_current(gl_render_window_t* bundle) {
     }
     currentBundle = bundle;
     if (main) pojav_environ->mainWindowBundle = (basic_render_window_t*)bundle;
+    if (bundle->nativeSurface != NULL && eglSwapInterval_p != NULL) {
+        eglSwapInterval_p(g_EglDisplay, pojav_environ->force_vsync ? 1 : 0);
+    }
 #ifndef GURKHA_BRIDGE_TEST
     bigcore_set_affinity();
 #endif
@@ -206,8 +209,9 @@ void gl_swap_buffers() {
 /* Window callbacks publish to window_slot, never touch render-thread context state. */
 void gl_setup_window() {}
 void gl_swap_interval(int interval) {
+    (void) interval;
     if (!initialized || !currentBundle) return;
-    if (!eglSwapInterval_p(g_EglDisplay, pojav_environ->force_vsync ? 1 : interval))
+    if (!eglSwapInterval_p(g_EglDisplay, pojav_environ->force_vsync ? 1 : 0))
         gl_failure("swap interval", eglGetError_p());
 }
 void gl_terminate(void) {

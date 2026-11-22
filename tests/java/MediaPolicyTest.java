@@ -19,7 +19,24 @@ public class MediaPolicyTest {
             int[] dest=MediaPolicy.recordingSize(source[0],source[1]);
             check(dest[0]<=854 && dest[1]<=480 && dest[0]<=source[0] && dest[1]<=source[1]);
             check(dest[0]>=2 && dest[1]>=2 && dest[0]%2==0 && dest[1]%2==0);
+
+            int[] dest720=MediaPolicy.recordingSize(source[0],source[1],MediaPolicy.QUALITY_720P);
+            check(dest720[0]<=1280 && dest720[1]<=720 && dest720[0]<=source[0] && dest720[1]<=source[1]);
+            check(dest720[0]>=2 && dest720[1]>=2 && dest720[0]%2==0 && dest720[1]%2==0);
+
+            int[] dest1080=MediaPolicy.recordingSize(source[0],source[1],MediaPolicy.QUALITY_1080P);
+            check(dest1080[0]<=1920 && dest1080[1]<=1080 && dest1080[0]<=source[0] && dest1080[1]<=source[1]);
+            check(dest1080[0]>=2 && dest1080[1]>=2 && dest1080[0]%2==0 && dest1080[1]%2==0);
         }
+        check(MediaPolicy.normalizeRecordingFps(MediaPolicy.QUALITY_720P, 30) == 30);
+        check(MediaPolicy.normalizeRecordingFps(MediaPolicy.QUALITY_720P, 60) == 30);
+        check(MediaPolicy.normalizeRecordingFps(MediaPolicy.QUALITY_1080P, 30) == 30);
+        check(MediaPolicy.normalizeRecordingFps(MediaPolicy.QUALITY_1080P, 60) == 60);
+        check(MediaPolicy.recordingBitrate(MediaPolicy.QUALITY_720P, 30) == 4_000_000);
+        check(MediaPolicy.recordingBitrate(MediaPolicy.QUALITY_1080P, 30) == 8_000_000);
+        check(MediaPolicy.recordingBitrate(MediaPolicy.QUALITY_1080P, 60) == 12_000_000);
+        check(MediaPolicy.frameDelayMs(30) == 33L);
+        check(MediaPolicy.frameDelayMs(60) == 17L);
         try { MediaPolicy.recordingSize(0,10); throw new AssertionError(); } catch (IllegalArgumentException expected) {}
         System.out.println("PASS: actual Java media policy");
     }

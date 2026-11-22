@@ -93,3 +93,40 @@ class MojoRustGLTests(unittest.TestCase):
         self.assertIn('_Atomic uint64_t generation;', window_slot)
         self.assertIn('atomic_load_explicit(&generation, memory_order_acquire)', window_slot)
 
+    def test_keybinds_mojo_control_import_and_fps_pipeline(self):
+        import re
+        keycode_src = (SRC / 'net/kdt/pojavlaunch/EfficientAndroidLWJGLKeycode.java').read_text()
+        self.assertIn('private static final int KEYCODE_COUNT = 106;', keycode_src)
+        adds = re.findall(r'add\(KeyEvent\.(KEYCODE_[A-Z0-9_]+),\s*LwjglGlfwKeycode\.(GLFW_KEY_[A-Z0-9_]+)', keycode_src)
+        self.assertEqual(len(adds), 106)
+        self.assertIn('sAndroidByLwjgl.put(LwjglGlfwKeycode.GLFW_KEY_ESCAPE, KeyEvent.KEYCODE_ESCAPE);', keycode_src)
+        self.assertIn('sAndroidByLwjgl.put(LwjglGlfwKeycode.GLFW_KEY_HOME, KeyEvent.KEYCODE_MOVE_HOME);', keycode_src)
+        self.assertIn('sAndroidByLwjgl.put(LwjglGlfwKeycode.GLFW_KEY_KP_ADD, KeyEvent.KEYCODE_NUMPAD_ADD);', keycode_src)
+        self.assertIn('sAndroidByLwjgl.put(LwjglGlfwKeycode.GLFW_KEY_DELETE, KeyEvent.KEYCODE_FORWARD_DEL);', keycode_src)
+
+        kbd_dialog = (SRC / 'com/movtery/zalithlauncher/ui/dialog/KeyboardDialog.java').read_text()
+        self.assertIn('bindKeyboardKey(binding.keyboardLeftCtrl, LwjglGlfwKeycode.GLFW_KEY_LEFT_CONTROL, specialOffset);', kbd_dialog)
+        self.assertIn('bindKeyboardKey(binding.keyboardCapslock, LwjglGlfwKeycode.GLFW_KEY_CAPS_LOCK, specialOffset);', kbd_dialog)
+        self.assertIn('bindKeyboardKey(binding.keyboardEsc, LwjglGlfwKeycode.GLFW_KEY_ESCAPE, specialOffset);', kbd_dialog)
+        self.assertIn('int keycodeIndex = EfficientAndroidLWJGLKeycode.getIndexByValue(glfwKeycode);', kbd_dialog)
+
+        converter = (SRC / 'net/kdt/pojavlaunch/customcontrols/LayoutConverter.java').read_text()
+        self.assertIn('public static String readLayoutJsonFromFile(File file)', converter)
+        self.assertIn('public static CustomControls convertV9MojoLayout(JSONObject oldLayoutJson, String jsonPath)', converter)
+        self.assertIn('public static int mojoAndroidToGlfw(int androidKeycode)', converter)
+        self.assertIn('MOJO_SPECIALBTN_KEYBOARDPAN = -10', converter)
+
+        edit_ctrl = (SRC / 'com/movtery/zalithlauncher/ui/subassembly/customcontrols/EditControlData.kt').read_text()
+        self.assertIn('LayoutConverter.readLayoutJsonFromFile(file)', edit_ctrl)
+
+        bigcore = (ROOT / 'ZalithLauncher/src/main/jni/bigcoreaffinity.c').read_text()
+        self.assertIn('if (core_freqs[i] > min_freq)', bigcore)
+
+        gl_bridge = (ROOT / 'ZalithLauncher/src/main/jni/ctxbridges/gl_bridge.c').read_text()
+        self.assertIn('eglSwapInterval_p(g_EglDisplay, pojav_environ->force_vsync ? 1 : 0);', gl_bridge)
+
+        ltw_egl = (ROOT / 'ZalithLauncher/src/main/jni/ltw_sdl_egl.c').read_text()
+        self.assertIn('host_eglSwapInterval(dpy, is_force_vsync_enabled() ? 1 : 0);', ltw_egl)
+        self.assertIn('{ "eglSwapInterval", (proc_t) eglSwapInterval }', ltw_egl)
+
+

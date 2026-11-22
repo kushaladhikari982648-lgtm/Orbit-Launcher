@@ -59,7 +59,17 @@ class ControlButtonFragment : FragmentWithAnim(R.layout.fragment_control_manager
                 val dialog = ZHTools.showTaskRunningDialog(requireContext())
                 Task.runTask {
                     uriList.forEach { uri ->
-                        FileTools.copyFileInBackground(requireContext(), uri, File(PathManager.DIR_CTRLMAP_PATH).absolutePath)
+                        val copied = FileTools.copyFileInBackground(requireContext(), uri, File(PathManager.DIR_CTRLMAP_PATH).absolutePath)
+                        val target = if (copied.name.lowercase().endsWith(".json")) {
+                            copied
+                        } else {
+                            val normalizedName = copied.name.replace(Regex("\\.zip$", RegexOption.IGNORE_CASE), "") + ".json"
+                            val jsonTarget = File(copied.parentFile, normalizedName)
+                            if (copied.renameTo(jsonTarget)) jsonTarget else copied
+                        }
+                        EditControlData.loadCustomControlsFromFile(requireContext(), target)?.let { converted ->
+                            EditControlData.saveToFile(requireContext(), converted, target)
+                        }
                     }
                 }.ended(TaskExecutors.getAndroidUI()) {
                     Toast.makeText(requireContext(), getString(R.string.file_added), Toast.LENGTH_SHORT).show()

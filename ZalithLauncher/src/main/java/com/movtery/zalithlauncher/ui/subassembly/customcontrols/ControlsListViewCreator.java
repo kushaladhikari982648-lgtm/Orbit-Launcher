@@ -105,7 +105,8 @@ public class ControlsListViewCreator {
             for (File file : files) {
                 if (file.isFile()) {
                     ControlInfoData controlInfoData = null;
-                    if (file.getName().endsWith(".json")) { //只有.json文件会被尝试识别
+                    String lowerName = file.getName().toLowerCase();
+                    if (lowerName.endsWith(".json") || lowerName.contains(".json") || lowerName.endsWith(".zip")) {
                         controlInfoData = EditControlData.loadFormFile(context, file);
                     }
 

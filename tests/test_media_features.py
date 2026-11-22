@@ -71,4 +71,23 @@ class MediaFeaturesTests(unittest.TestCase):
         self.assertIn('worker.shutdown()', wardrobe)
         self.assertNotIn('accessToken', wardrobe)
 
+    def test_recorder_quality_and_fps_selection(self):
+        policy = (APP / 'feature/media/MediaPolicy.java').read_text()
+        self.assertIn('public static final int QUALITY_720P = 720;', policy)
+        self.assertIn('public static final int QUALITY_1080P = 1080;', policy)
+        self.assertIn('public static int normalizeRecordingFps(int qualityHeight, int requestedFps)', policy)
+        self.assertIn('public static int recordingBitrate(int qualityHeight, int fps)', policy)
+        self.assertIn('public static long frameDelayMs(int fps)', policy)
+
+        recorder = (APP / 'feature/media/GameplayRecorder.java').read_text()
+        self.assertIn('public GameplayRecorder(Context context, Surface source, int width, int height, int qualityHeight, int targetFps, Listener listener)', recorder)
+        self.assertIn('worker.postDelayed(this::nextFrame,frameDelayMs);', recorder)
+
+        game = (JAVA / 'net/kdt/pojavlaunch/MainActivity.java').read_text()
+        self.assertIn('R.string.recorder_quality_720p', game)
+        self.assertIn('R.string.recorder_quality_1080p', game)
+        self.assertIn('R.string.recorder_fps_30', game)
+        self.assertIn('R.string.recorder_fps_60', game)
+        self.assertIn('MediaPolicy.normalizeRecordingFps(', game)
+
 if __name__ == '__main__': unittest.main()

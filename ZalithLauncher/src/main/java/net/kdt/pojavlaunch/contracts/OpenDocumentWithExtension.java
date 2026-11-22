@@ -31,7 +31,9 @@ public class OpenDocumentWithExtension extends ActivityResultContract<Object, Li
      * @param allowMultiple whether or not to allow multiple file selections
      */
     public OpenDocumentWithExtension(String extension, boolean allowMultiple) {
-        String extensionMimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+        String extensionMimeType = "json".equalsIgnoreCase(extension)
+                ? "*/*"
+                : MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
         if(extensionMimeType == null) extensionMimeType = "*/*";
         mimeType = extensionMimeType;
         this.allowMultiple = allowMultiple;

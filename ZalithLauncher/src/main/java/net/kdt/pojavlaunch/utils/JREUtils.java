@@ -269,6 +269,8 @@ public final class JREUtils {
             envMap.put("LIBGL_NOERROR", "1");
             envMap.put("LIBGL_NOINTOVLHACK", "1");
             envMap.put("LIBGL_NORMALIZE", "1");
+            envMap.put("LIBGL_USEVBO", "1");
+            envMap.put("LIBGL_FASTMATH", "1");
         }
 
         envMap.putAll(currentRenderer.getRendererEnv().getValue());
