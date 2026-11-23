@@ -199,8 +199,8 @@ public class LayoutConverter {
             }
         }
         for (ControlJoystickData joystick : layout.mJoystickDataList) {
-            if (joystick != null && joystick.forwardLockKeycode > 0) {
-                joystick.forwardLockKeycode = mojoAndroidToGlfw(joystick.forwardLockKeycode);
+            if (joystick != null) {
+                convertMojoControlData(joystick);
             }
         }
         layout.version = 8;
