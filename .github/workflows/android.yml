@@ -585,38 +585,6 @@ jobs:
         with:
           name: native-dependencies
           path: ZalithLauncher/libs
-      - name: Export arm7a and arm8a APK blobs for workspace download
-        run: |
-          python3 - <<'PY'
-          import base64, hashlib, json, os, pathlib, subprocess
-          repo = os.environ["GH_REPO"]
-          chunk_size = 20 * 1024 * 1024
-          manifest = {"commit": os.environ["GITHUB_SHA"], "run": os.environ["GITHUB_RUN_ID"], "apks": {}}
-          for arch, abi in (("arm", "armeabi-v7a"), ("arm64", "arm64-v8a")):
-              files = list((pathlib.Path("downloaded-apks") / f"GurkhaLauncher(Debug) {arch}").rglob("*.apk"))
-              if not files:
-                  raise RuntimeError(f"Missing {arch} APK")
-              apk = files[0]
-              raw = apk.read_bytes()
-              sha256 = hashlib.sha256(raw).hexdigest()
-              blobs = []
-              for offset in range(0, len(raw), chunk_size):
-                  chunk = raw[offset:offset + chunk_size]
-                  payload = json.dumps({"content": base64.b64encode(chunk).decode(), "encoding": "base64"})
-                  out = subprocess.check_output(
-                      ["gh", "api", f"repos/{repo}/git/blobs", "--input", "-"],
-                      input=payload, text=True
-                  )
-                  blobs.append(json.loads(out)["sha"])
-              manifest["apks"][abi] = {
-                  "filename": f"OrbitLauncher-1.0.1-debug-{abi}.apk",
-                  "original_name": apk.name,
-                  "size": len(raw),
-                  "sha256": sha256,
-                  "blobs": blobs,
-              }
-          print("::notice title=APK_BLOBS::" + json.dumps(manifest))
-          PY
       - name: Verify and stage the requested debug release
         run: |
           set -o pipefail

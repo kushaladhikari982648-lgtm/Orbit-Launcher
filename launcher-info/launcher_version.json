@@ -1,15 +1,15 @@
 {
-  "version_code": 100104,
-  "version_name": "1.0.1",
+  "version_code": 100105,
+  "version_name": "1.0.2",
   "title": {
-    "en_us": "Orbit Launcher ver 1.0.1",
-    "zh_cn": "Orbit Launcher ver 1.0.1",
-    "zh_tw": "Orbit Launcher ver 1.0.1"
+    "en_us": "Orbit Launcher ver 1.0.2",
+    "zh_cn": "Orbit Launcher ver 1.0.2",
+    "zh_tw": "Orbit Launcher ver 1.0.2"
   },
   "description": {
-    "en_us": "Orbit Launcher ver 1.0.1: Synced RustGL 0.3.0-gurkha.14 (MC 26.3 OIT output array legalization), added zero-lock GL/EGL fast-paths, hardware ANativeWindow resolution scaling, big-core CPU affinity, LWJGL system allocator, and Discord Rich Presence fixes. Join https://discord.gg/7FaUJf4R9",
-    "zh_cn": "Orbit Launcher ver 1.0.1：同步 RustGL 0.3.0-gurkha.14（MC 26.3 OIT 输出数组转换）、零锁 GL/EGL 快速路径、ANativeWindow 硬件分辨率缩放、大核 CPU 亲和性、LWJGL 系统分配器与 Discord Rich Presence 修复。官方社区：https://discord.gg/7FaUJf4R9",
-    "zh_tw": "Orbit Launcher ver 1.0.1：同步 RustGL 0.3.0-gurkha.14（MC 26.3 OIT 輸出陣列轉換）、零鎖 GL/EGL 快速路徑、ANativeWindow 硬體解析度縮放、大核 CPU 親和性、LWJGL 系統配置器與 Discord Rich Presence 修復。官方社群：https://discord.gg/7FaUJf4R9"
+    "en_us": "Orbit Launcher ver 1.0.2: Fixed custom control & SDL3 keybind mappings, added MJ Launcher (MojoLauncher) v9 & ZIP control layout import, added 720p/1080p 30/60 FPS gameplay recorder options, and fixed tri-cluster CPU affinity, EGL swapInterval/VSync, and OpenGL ES 3.2/3.1 LTW context bottlenecks. Join https://discord.gg/7FaUJf4R9",
+    "zh_cn": "Orbit Launcher ver 1.0.2：修复自定义按键与 SDL3 键位映射、新增 MJ Launcher (MojoLauncher) v9 与 ZIP 控制布局导入、新增 720p/1080p 30/60 FPS 录屏选项，并修复三丛集 CPU 亲和性、EGL swapInterval/垂直同步与 OpenGL ES 3.2/3.1 LTW 上下文帧率瓶颈。官方社区：https://discord.gg/7FaUJf4R9",
+    "zh_tw": "Orbit Launcher ver 1.0.2：修復自訂按鍵與 SDL3 鍵位映射、新增 MJ Launcher (MojoLauncher) v9 與 ZIP 控制佈局匯入、新增 720p/1080p 30/60 FPS 錄影選項，並修復三叢集 CPU 親和性、EGL swapInterval/垂直同步與 OpenGL ES 3.2/3.1 LTW 上下文幀率瓶頸。官方社群：https://discord.gg/7FaUJf4R9"
   },
   "published_at": "2026-10-19T00:00:00Z",
   "file_size": {
