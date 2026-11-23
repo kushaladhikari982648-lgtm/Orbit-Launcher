@@ -143,12 +143,13 @@ class GameMenuViewWrapper(
             fpsText.visibility = if (showFPS) View.VISIBLE else View.GONE
 
             if (showMemory || showFPS) {
-                timer = Timer().apply {
+                val refreshIntervalMs = Math.max(500L, AllSettings.gameMenuInfoRefreshRate.getValue().toLong())
+                timer = Timer("GameMenuInfoTimer", true).apply {
                     schedule(object : TimerTask() {
                         override fun run() {
                             updateInfoText()
                         }
-                    }, 0, AllSettings.gameMenuInfoRefreshRate.getValue().toLong())
+                    }, 0, refreshIntervalMs)
                 }
             }
         }

@@ -1349,10 +1349,17 @@ public class GLFW
     }
 
     public static int glfwGetKey(@NativeType("GLFWwindow *") long window, int key) {
-        return keyDownBuffer.get(Math.max(0, key-31));
+        if (key < GLFW_KEY_SPACE || key > GLFW_KEY_LAST) {
+            return GLFW_RELEASE;
+        }
+        int idx = Math.min(Math.max(0, key - 31), keyDownBuffer.capacity() - 1);
+        return keyDownBuffer.get(idx);
     }
 
     public static int glfwGetMouseButton(@NativeType("GLFWwindow *") long window, int button) {
+        if (button < 0 || button >= mouseDownBuffer.capacity()) {
+            return GLFW_RELEASE;
+        }
         return mouseDownBuffer.get(button);
     }
     public static void glfwGetCursorPos(@NativeType("GLFWwindow *") long window, @Nullable @NativeType("double *") DoubleBuffer xpos, @Nullable @NativeType("double *") DoubleBuffer ypos) {

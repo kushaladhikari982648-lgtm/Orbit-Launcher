@@ -203,7 +203,16 @@ void pojavPumpEvents(void* window) {
                 if(pojav_environ->GLFW_invoke_MouseButton) pojav_environ->GLFW_invoke_MouseButton(window, event.i1, event.i2, event.i3);
                 break;
             case EVENT_TYPE_SCROLL:
-                if(pojav_environ->GLFW_invoke_Scroll) pojav_environ->GLFW_invoke_Scroll(window, event.i1, event.i2);
+                if(pojav_environ->GLFW_invoke_Scroll) {
+                    if (event.i3 == 1) {
+                        float fx = 0.0f, fy = 0.0f;
+                        memcpy(&fx, &event.i1, sizeof(float));
+                        memcpy(&fy, &event.i2, sizeof(float));
+                        pojav_environ->GLFW_invoke_Scroll(window, (double) fx, (double) fy);
+                    } else {
+                        pojav_environ->GLFW_invoke_Scroll(window, event.i1, event.i2);
+                    }
+                }
                 break;
             case EVENT_TYPE_FRAMEBUFFER_SIZE:
                 handleFramebufferSizeJava(pojav_environ->showingWindow, event.i1, event.i2);
@@ -630,10 +639,11 @@ jboolean noncritical_send_char(__attribute__((unused)) JNIEnv* env, __attribute_
 
 jboolean critical_send_char_mods(jchar codepoint, jint mods) {
     if (pojav_environ->GLFW_invoke_CharMods && pojav_environ->isInputReady) {
+        int masked_mods = (int)(mods & 0xFF);
         if (pojav_environ->isUseStackQueueCall) {
-            sendData(EVENT_TYPE_CHAR_MODS, (int) codepoint, mods, 0, 0);
+            sendData(EVENT_TYPE_CHAR_MODS, (int) codepoint, masked_mods, 0, 0);
         } else {
-            pojav_environ->GLFW_invoke_CharMods((void*) pojav_environ->showingWindow, codepoint, mods);
+            pojav_environ->GLFW_invoke_CharMods((void*) pojav_environ->showingWindow, codepoint, masked_mods);
         }
         return JNI_TRUE;
     }
@@ -692,13 +702,15 @@ void noncritical_send_cursor_pos(__attribute__((unused)) JNIEnv* env, __attribut
      _a > _b ? _a : _b; })
 void critical_send_key(jint key, jint scancode, jint action, jint mods) {
     if (pojav_environ->GLFW_invoke_Key && pojav_environ->isInputReady) {
-        if (pojav_environ->keyDownBuffer != NULL && key >= 31 && key < 31 + 317) {
-            pojav_environ->keyDownBuffer[key - 31] = (jbyte) action;
+        int masked_mods = (int)(mods & 0xFF);
+        short idx = (short)(key - 31);
+        if (pojav_environ->keyDownBuffer != NULL && idx >= 0 && idx < 317) {
+            pojav_environ->keyDownBuffer[idx] = (jbyte) action;
         }
         if (pojav_environ->isUseStackQueueCall) {
-            sendData(EVENT_TYPE_KEY, key, scancode, action, mods);
+            sendData(EVENT_TYPE_KEY, key, scancode, action, masked_mods);
         } else {
-            pojav_environ->GLFW_invoke_Key((void*) pojav_environ->showingWindow, key, scancode, action, mods);
+            pojav_environ->GLFW_invoke_Key((void*) pojav_environ->showingWindow, key, scancode, action, masked_mods);
         }
     }
 }
@@ -707,14 +719,15 @@ void noncritical_send_key(__attribute__((unused)) JNIEnv* env, __attribute__((un
 }
 
 void critical_send_mouse_button(jint button, jint action, jint mods) {
-    if (pojav_environ->GLFW_invoke_MouseButton && pojav_environ->isInputReady) {
-        if (pojav_environ->mouseDownBuffer != NULL && button >= 0 && button < 8) {
-            pojav_environ->mouseDownBuffer[button] = (jbyte) action;
-        }
+    int masked_mods = (int)(mods & 0xFF);
+    if (pojav_environ->mouseDownBuffer != NULL && button >= 0 && button < 8) {
+        pojav_environ->mouseDownBuffer[button] = (jbyte) action;
+    }
+    if (pojav_environ->GLFW_invoke_MouseButton && pojav_environ->isInputReady && button >= 0 && button < 8) {
         if (pojav_environ->isUseStackQueueCall) {
-            sendData(EVENT_TYPE_MOUSE_BUTTON, button, action, mods, 0);
+            sendData(EVENT_TYPE_MOUSE_BUTTON, button, action, masked_mods, 0);
         } else {
-            pojav_environ->GLFW_invoke_MouseButton((void*) pojav_environ->showingWindow, button, action, mods);
+            pojav_environ->GLFW_invoke_MouseButton((void*) pojav_environ->showingWindow, button, action, masked_mods);
         }
     }
 }
@@ -753,7 +766,12 @@ void noncritical_send_screen_size(__attribute__((unused)) JNIEnv* env, __attribu
 void critical_send_scroll(jdouble xoffset, jdouble yoffset) {
     if (pojav_environ->GLFW_invoke_Scroll && pojav_environ->isInputReady) {
         if (pojav_environ->isUseStackQueueCall) {
-            sendData(EVENT_TYPE_SCROLL, (int)xoffset, (int)yoffset, 0, 0);
+            float fx = (float) xoffset;
+            float fy = (float) yoffset;
+            int ix = 0, iy = 0;
+            memcpy(&ix, &fx, sizeof(int));
+            memcpy(&iy, &fy, sizeof(int));
+            sendData(EVENT_TYPE_SCROLL, ix, iy, 1, 0);
         } else {
             pojav_environ->GLFW_invoke_Scroll((void*) pojav_environ->showingWindow, (double) xoffset, (double) yoffset);
         }

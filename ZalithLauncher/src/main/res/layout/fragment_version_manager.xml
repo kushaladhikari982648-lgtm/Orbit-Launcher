@@ -13,8 +13,8 @@
         android:id="@+id/shortcuts_layout"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="@dimen/_12sdp"
-        android:layout_marginVertical="@dimen/_12sdp"
+        android:layout_marginStart="6dp"
+        android:layout_marginVertical="6dp"
         android:layout_marginEnd="@dimen/_6sdp"
         android:layout_weight="1"
         android:background="@drawable/background_card"
@@ -43,8 +43,8 @@
 
             <ImageView
                 android:id="@+id/mods_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 app:layout_constraintBottom_toBottomOf="@+id/shortcuts_mods"
                 app:layout_constraintStart_toStartOf="parent"
@@ -64,8 +64,8 @@
 
             <ImageView
                 android:id="@+id/game_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 app:layout_constraintBottom_toBottomOf="@+id/game_path"
@@ -86,8 +86,8 @@
 
             <ImageView
                 android:id="@+id/resource_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 app:layout_constraintBottom_toBottomOf="@+id/resource_path"
@@ -108,8 +108,8 @@
 
             <ImageView
                 android:id="@+id/world_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 app:layout_constraintBottom_toBottomOf="@+id/world_path"
@@ -130,8 +130,8 @@
 
             <ImageView
                 android:id="@+id/shader_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="fitCenter"
                 android:scaleX="0.95"
@@ -154,8 +154,8 @@
 
             <ImageView
                 android:id="@+id/screenshot_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="fitCenter"
                 android:scaleX="0.95"
@@ -178,8 +178,8 @@
 
             <ImageView
                 android:id="@+id/logs_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 app:layout_constraintBottom_toBottomOf="@+id/logs_path"
@@ -200,8 +200,8 @@
 
             <ImageView
                 android:id="@+id/crash_report_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 app:layout_constraintBottom_toBottomOf="@+id/crash_report_path"
                 app:layout_constraintStart_toStartOf="parent"
@@ -228,7 +228,7 @@
         android:layout_height="match_parent"
         android:layout_marginStart="@dimen/_6sdp"
         android:layout_marginEnd="@dimen/_12sdp"
-        android:layout_marginVertical="@dimen/_12sdp"
+        android:layout_marginVertical="6dp"
         android:layout_weight="1"
         android:background="@drawable/background_card"
         android:padding="@dimen/_2sdp"
@@ -256,8 +256,8 @@
 
             <ImageView
                 android:id="@+id/version_settings_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 app:layout_constraintBottom_toBottomOf="@+id/version_settings"
@@ -278,8 +278,8 @@
 
             <ImageView
                 android:id="@+id/rename_version_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 app:layout_constraintBottom_toBottomOf="@+id/version_rename"
@@ -300,8 +300,8 @@
 
             <ImageView
                 android:id="@+id/copy_version_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 android:scaleX="0.86"
@@ -324,8 +324,8 @@
 
             <ImageView
                 android:id="@+id/delete_version_icon"
-                android:layout_width="@dimen/_32sdp"
-                android:layout_height="@dimen/_32sdp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="@dimen/_16sdp"
                 android:scaleType="centerInside"
                 android:scaleX="0.9"

@@ -162,5 +162,47 @@ class ModernUiTests(unittest.TestCase):
         self.assertIn('SDL_SetWindowPosition', sdl_hook)
         self.assertIn('pojavSyncSdlWindowAndFocus', sdl_hook)
 
+    def test_unsmushed_download_mods_settings_and_manager_layouts(self):
+        download_root = ET.parse(RES / 'layout/fragment_download.xml').getroot()
+        classify_layout = next(e for e in download_root.iter() if e.get(A + 'id') == '@+id/classify_layout')
+        self.assertEqual('138dp', classify_layout.get(A + 'layout_width'))
+        self.assertEqual('@drawable/mc_panel', classify_layout.get(A + 'background'))
 
+        dl_res_root = ET.parse(RES / 'layout/fragment_download_resource.xml').getroot()
+        dl_layout = next(e for e in dl_res_root.iter() if e.get(A + 'id') == '@+id/download_layout')
+        self.assertEqual('@drawable/background_card', dl_layout.get(A + 'background'))
+        operate_layout = next(e for e in dl_res_root.iter() if e.get(A + 'id') == '@+id/operate_layout')
+        self.assertEqual('184dp', operate_layout.get(A + 'layout_width'))
+        self.assertEqual('@drawable/mc_panel', operate_layout.get(A + 'background'))
+
+        item_dl_root = ET.parse(RES / 'layout/item_download_info.xml').getroot()
+        self.assertEqual('@drawable/background_card', item_dl_root.get(A + 'background'))
+        desc_tv = next(e for e in item_dl_root.iter() if e.get(A + 'id') == '@+id/description_textview')
+        self.assertEqual('2', desc_tv.get(A + 'maxLines'))
+
+        settings_root = ET.parse(RES / 'layout/fragment_settings.xml').getroot()
+        self.assertEqual('horizontal', settings_root.get(A + 'orientation'))
+        settings_sidebar = next(e for e in settings_root.iter() if e.get(A + 'id') == '@+id/settings_layout')
+        self.assertEqual('144dp', settings_sidebar.get(A + 'layout_width'))
+        self.assertEqual('@drawable/mc_panel', settings_sidebar.get(A + 'background'))
+        for btn in settings_root.iter('Button'):
+            self.assertEqual('@style/ModernNav', btn.get('style'))
+
+        for layout_name in (
+            'fragment_mod_download.xml',
+            'fragment_mods.xml',
+            'fragment_versions_list.xml',
+            'fragment_version_config.xml',
+            'fragment_files.xml',
+            'fragment_account.xml',
+            'fragment_control_manager.xml',
+        ):
+            root = ET.parse(RES / 'layout' / layout_name).getroot()
+            xml_text = ET.tostring(root).decode()
+            self.assertIn('@drawable/mc_panel', xml_text)
+            self.assertNotIn('@color/menu_overlay', xml_text)
+
+
+if __name__ == '__main__':
+    unittest.main()
 

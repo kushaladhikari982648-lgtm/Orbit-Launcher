@@ -10,9 +10,11 @@
         android:id="@+id/download_layout"
         android:layout_width="0dp"
         android:layout_height="match_parent"
+        android:layout_marginEnd="6dp"
+        android:background="@drawable/background_card"
+        android:padding="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@+id/operate_layout"
-        app:layout_constraintHorizontal_weight="4.5"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
@@ -20,9 +22,9 @@
             android:id="@+id/recycler_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/_minus4sdp"
             android:clipToPadding="false"
-            android:paddingHorizontal="@dimen/_8sdp"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="2dp"
             android:scrollbarThumbVertical="@color/background_menu_element"
             android:scrollbars="vertical"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -36,8 +38,8 @@
             android:layout_height="wrap_content"
             android:background="@drawable/background_card"
             android:orientation="vertical"
-            android:paddingHorizontal="@dimen/_16sdp"
-            android:paddingVertical="@dimen/_8sdp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
@@ -56,8 +58,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:text="@string/generic_loading"
-                android:textSize="@dimen/_14ssp"
+                android:textSize="12sp"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@+id/loading_progress" />
@@ -69,7 +72,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/background_item"
-            android:padding="@dimen/_12sdp"
+            android:padding="10dp"
+            android:textSize="12sp"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@+id/recycler_view"
             app:layout_constraintEnd_toEndOf="@+id/recycler_view"
@@ -79,10 +83,10 @@
 
         <ImageButton
             android:id="@+id/back_to_top"
-            android:layout_width="@dimen/_40sdp"
-            android:layout_height="@dimen/_40sdp"
-            android:layout_marginEnd="@dimen/_18sdp"
-            android:layout_marginBottom="@dimen/_16sdp"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="12dp"
+            android:layout_marginBottom="12dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:rotation="-90"
             android:scaleType="centerInside"
@@ -96,72 +100,73 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/operate_layout"
-        android:layout_width="0dp"
+        android:layout_width="184dp"
         android:layout_height="match_parent"
+        android:background="@drawable/mc_panel"
+        android:padding="8dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_weight="2.75"
-        app:layout_constraintStart_toEndOf="@+id/download_layout"
         app:layout_constraintTop_toTopOf="parent">
 
         <View
             android:id="@+id/shadowView"
-            android:layout_width="@dimen/_4sdp"
+            android:layout_width="1dp"
             android:layout_height="match_parent"
-            android:background="@drawable/shadow_gradient_right"
+            android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="@id/operate_layout"
+            app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/operate_main_layout"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:background="@color/menu_overlay"
+            android:background="@android:color/transparent"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/shadowView"
+            app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent">
 
             <TextView
                 android:id="@+id/search_title"
+                style="@style/ModernSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="@dimen/_8sdp"
-                android:layout_marginTop="@dimen/_12sdp"
                 android:text="@string/download_ui_search"
+                android:textSize="10sp"
                 app:layout_constraintTop_toTopOf="parent" />
 
             <com.movtery.zalithlauncher.ui.view.AnimEditText
                 android:id="@+id/name_edit"
                 android:layout_width="0dp"
-                android:layout_height="@dimen/_40sdp"
-                android:layout_marginHorizontal="@dimen/_8sdp"
+                android:layout_height="32dp"
+                android:layout_marginTop="3dp"
+                android:layout_marginEnd="4dp"
                 android:background="@drawable/background_edit_box"
                 android:inputType="textPersonName"
-                android:paddingHorizontal="@dimen/padding_heavy"
-                android:textSize="@dimen/_13ssp"
+                android:paddingHorizontal="8dp"
+                android:textSize="11sp"
                 app:layout_constraintEnd_toStartOf="@id/search_view"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@+id/search_title" />
 
             <ImageButton
                 android:id="@+id/search_view"
-                android:layout_width="wrap_content"
-                android:layout_height="0dp"
-                android:layout_marginEnd="@dimen/_8sdp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:minWidth="@dimen/_38sdp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="@drawable/background_edit_box"
+                android:scaleType="centerInside"
                 android:src="@drawable/ic_mod_search"
                 app:layout_constraintBottom_toBottomOf="@+id/name_edit"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/search_title"
+                app:layout_constraintTop_toTopOf="@+id/name_edit"
                 tools:ignore="ContentDescription" />
 
             <ScrollView
                 android:layout_width="0dp"
                 android:layout_height="0dp"
-                android:layout_marginVertical="@dimen/_8sdp"
+                android:layout_marginVertical="6dp"
+                android:scrollbars="none"
                 app:layout_constraintBottom_toTopOf="@+id/return_button"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -174,33 +179,38 @@
 
                     <com.movtery.zalithlauncher.ui.view.AnimButton
                         android:id="@+id/install_button"
+                        style="@style/ModernButton"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="@dimen/_4sdp"
-                        android:text="@string/download_ui_install_local"/>
+                        android:layout_height="32dp"
+                        android:text="@string/download_ui_install_local"
+                        android:textSize="11sp" />
 
                     <androidx.constraintlayout.widget.ConstraintLayout
                         android:id="@+id/mc_version_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/_4sdp"
-                        android:layout_marginHorizontal="@dimen/_8sdp">
+                        android:layout_marginTop="6dp">
 
                         <TextView
                             android:id="@+id/mc_version_textview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_mc_version"
+                            android:textColor="@color/secondary_text"
+                            android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
                         <com.movtery.zalithlauncher.ui.view.AnimTextView
                             android:id="@+id/selected_mc_version_view"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/_40sdp"
+                            android:layout_height="30dp"
+                            android:layout_marginTop="2dp"
                             android:background="@drawable/background_edit_box"
+                            android:gravity="center_vertical"
                             android:hint="@string/version_select_hint"
-                            android:paddingHorizontal="@dimen/padding_heavy"
-                            android:textSize="@dimen/_13ssp"
+                            android:paddingHorizontal="8dp"
+                            android:singleLine="true"
+                            android:textSize="11sp"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
                             app:layout_constraintTop_toBottomOf="@id/mc_version_textview" />
@@ -211,29 +221,32 @@
                         android:id="@+id/platform_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/_8sdp"
-                        android:layout_marginHorizontal="@dimen/_8sdp">
+                        android:layout_marginTop="6dp">
 
                         <TextView
                             android:id="@+id/platform_textview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_platform"
+                            android:textColor="@color/secondary_text"
+                            android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
                         <com.skydoves.powerspinner.PowerSpinnerView
                             android:id="@+id/platform_spinner"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/_40sdp"
+                            android:layout_height="30dp"
+                            android:layout_marginTop="2dp"
                             android:background="@drawable/background_edit_box"
-                            android:paddingHorizontal="@dimen/_8sdp"
+                            android:gravity="center_vertical"
+                            android:paddingHorizontal="8dp"
+                            android:textSize="11sp"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
                             app:layout_constraintTop_toBottomOf="@id/platform_textview"
                             app:spinner_arrow_tint="@color/primary_text"
                             app:spinner_popup_background="@drawable/background_edit_box"
-                            app:spinner_popup_height="@dimen/_80sdp"
-                            tools:paddingVertical="@dimen/_12sdp" />
+                            app:spinner_popup_height="120dp" />
 
                     </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -241,29 +254,32 @@
                         android:id="@+id/sort_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/_8sdp"
-                        android:layout_marginHorizontal="@dimen/_8sdp">
+                        android:layout_marginTop="6dp">
 
                         <TextView
                             android:id="@+id/sort_textview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/download_ui_sort_by"
+                            android:text="@string/download_ui_sort"
+                            android:textColor="@color/secondary_text"
+                            android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
                         <com.skydoves.powerspinner.PowerSpinnerView
                             android:id="@+id/sort_spinner"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/_40sdp"
+                            android:layout_height="30dp"
+                            android:layout_marginTop="2dp"
                             android:background="@drawable/background_edit_box"
-                            android:paddingHorizontal="@dimen/_8sdp"
+                            android:gravity="center_vertical"
+                            android:paddingHorizontal="8dp"
+                            android:textSize="11sp"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
                             app:layout_constraintTop_toBottomOf="@id/sort_textview"
                             app:spinner_arrow_tint="@color/primary_text"
                             app:spinner_popup_background="@drawable/background_edit_box"
-                            app:spinner_popup_height="@dimen/_200sdp"
-                            tools:paddingVertical="@dimen/_12sdp" />
+                            app:spinner_popup_height="150dp" />
 
                     </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -271,29 +287,32 @@
                         android:id="@+id/category_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/_8sdp"
-                        android:layout_marginHorizontal="@dimen/_8sdp">
+                        android:layout_marginTop="6dp">
 
                         <TextView
                             android:id="@+id/category_textview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_category"
+                            android:textColor="@color/secondary_text"
+                            android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
                         <com.skydoves.powerspinner.PowerSpinnerView
                             android:id="@+id/category_spinner"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/_40sdp"
+                            android:layout_height="30dp"
+                            android:layout_marginTop="2dp"
                             android:background="@drawable/background_edit_box"
-                            android:paddingHorizontal="@dimen/_8sdp"
+                            android:gravity="center_vertical"
+                            android:paddingHorizontal="8dp"
+                            android:textSize="11sp"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@+id/category_textview"
+                            app:layout_constraintTop_toBottomOf="@id/category_textview"
                             app:spinner_arrow_tint="@color/primary_text"
                             app:spinner_popup_background="@drawable/background_edit_box"
-                            app:spinner_popup_height="@dimen/_200sdp"
-                            tools:paddingVertical="@dimen/_12sdp" />
+                            app:spinner_popup_height="160dp" />
 
                     </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -301,56 +320,52 @@
                         android:id="@+id/modloader_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/_8sdp"
-                        android:layout_marginHorizontal="@dimen/_8sdp">
+                        android:layout_marginTop="6dp">
 
                         <TextView
                             android:id="@+id/modloader_textview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_modloader"
+                            android:textColor="@color/secondary_text"
+                            android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
                         <com.skydoves.powerspinner.PowerSpinnerView
                             android:id="@+id/modloader_spinner"
                             android:layout_width="0dp"
-                            android:layout_height="@dimen/_40sdp"
+                            android:layout_height="30dp"
+                            android:layout_marginTop="2dp"
                             android:background="@drawable/background_edit_box"
-                            android:paddingHorizontal="@dimen/_8sdp"
+                            android:gravity="center_vertical"
+                            android:paddingHorizontal="8dp"
+                            android:textSize="11sp"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@+id/modloader_textview"
+                            app:layout_constraintTop_toBottomOf="@id/modloader_textview"
                             app:spinner_arrow_tint="@color/primary_text"
                             app:spinner_popup_background="@drawable/background_edit_box"
-                            app:spinner_popup_height="@dimen/_200sdp"
-                            tools:paddingVertical="@dimen/_12sdp" />
+                            app:spinner_popup_height="140dp" />
 
                     </androidx.constraintlayout.widget.ConstraintLayout>
+
                 </LinearLayout>
+
             </ScrollView>
 
             <com.movtery.zalithlauncher.ui.view.AnimButton
-                android:id="@+id/reset"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginVertical="@dimen/_8sdp"
-                android:layout_marginStart="@dimen/_4sdp"
-                android:text="@string/generic_reset"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toStartOf="@+id/return_button"
-                app:layout_constraintStart_toStartOf="parent" />
-
-            <com.movtery.zalithlauncher.ui.view.AnimButton
                 android:id="@+id/return_button"
+                style="@style/ModernButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginVertical="@dimen/_8sdp"
-                android:layout_marginEnd="@dimen/_4sdp"
+                android:layout_height="32dp"
                 android:text="@string/generic_return"
+                android:textSize="11sp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toEndOf="@+id/reset" />
+                app:layout_constraintStart_toStartOf="parent" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
+
     </androidx.constraintlayout.widget.ConstraintLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

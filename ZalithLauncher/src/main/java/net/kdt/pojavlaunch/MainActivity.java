@@ -823,10 +823,8 @@ public class MainActivity extends BaseActivity implements ControlButtonMenuListe
         }
 
         private void sendKeyPress(int keycode, boolean isDown) {
-            System.out.println("Test keycode: " + keycode);
-            int lwjglKeycode = EfficientAndroidLWJGLKeycode.getValueByIndex(keycode);
-            System.out.println("Test lwjglKeycode: " + lwjglKeycode);
-            if (keycode >= LwjglGlfwKeycode.GLFW_KEY_UNKNOWN) {
+            int lwjglKeycode = EfficientAndroidLWJGLKeycode.resolveLwjglKeycode(keycode);
+            if (lwjglKeycode > LwjglGlfwKeycode.GLFW_KEY_UNKNOWN) {
                 CallbackBridge.sendKeyPress(lwjglKeycode, CallbackBridge.getCurrentMods(), isDown);
                 CallbackBridge.setModifiers(lwjglKeycode, isDown);
             }

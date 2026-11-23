@@ -29,6 +29,24 @@ static SdlDlsymProxyFn resolveSdlDlsymProxy(void) {
     return cached;
 }
 
+static void* resolve_bare_library_in_paths(const char* lib_name, int mode) {
+    if (!lib_name || !lib_name[0] || strchr(lib_name, '/') != NULL) return NULL;
+    const char* ld_path = getenv("LD_LIBRARY_PATH");
+    if (!ld_path || !ld_path[0]) return NULL;
+    char paths_copy[2048];
+    strncpy(paths_copy, ld_path, sizeof(paths_copy) - 1);
+    paths_copy[sizeof(paths_copy) - 1] = '\0';
+    char* saveptr = NULL;
+    for (char* dir = strtok_r(paths_copy, ":", &saveptr); dir != NULL; dir = strtok_r(NULL, ":", &saveptr)) {
+        if (!dir[0]) continue;
+        char candidate[512];
+        snprintf(candidate, sizeof(candidate), "%s/%s", dir, lib_name);
+        void* handle = dlopen(candidate, mode);
+        if (handle != NULL) return handle;
+    }
+    return NULL;
+}
+
 static void* dlopen_with_lwjgl_natives_fallback(const char* lib_name, int mode) {
     if (!lib_name || !lib_name[0]) return NULL;
     const char* natives_dir = getenv("POJAV_LWJGL_NATIVES_DIR");
@@ -38,6 +56,17 @@ static void* dlopen_with_lwjgl_natives_fallback(const char* lib_name, int mode) 
         void* handle = dlopen(candidate, mode);
         if (handle != NULL) return handle;
     }
+    const char* pojav_native_dir = getenv("POJAV_NATIVEDIR");
+    if (pojav_native_dir && pojav_native_dir[0]) {
+        char candidate[512];
+        snprintf(candidate, sizeof(candidate), "%s/%s", pojav_native_dir, lib_name);
+        void* handle = dlopen(candidate, mode);
+        if (handle != NULL) return handle;
+    }
+    void* existing = dlopen(lib_name, mode | RTLD_NOLOAD);
+    if (existing != NULL) return existing;
+    void* from_paths = resolve_bare_library_in_paths(lib_name, mode);
+    if (from_paths != NULL) return from_paths;
     return dlopen(lib_name, mode);
 }
 
@@ -69,14 +98,14 @@ static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
         if (strcmp(filename, "libglfw.so") == 0 || strstr(base, "libglfw.so") == base) {
             void* handle = dlopen("libpojavexec.so", mode | RTLD_NOLOAD);
             if (handle == NULL) {
-                handle = dlopen("libpojavexec.so", mode);
+                handle = dlopen_with_lwjgl_natives_fallback("libpojavexec.so", mode);
             }
             if (handle != NULL) {
                 return (jlong) (uintptr_t) handle;
             }
         }
 
-        // Redirect desktop/mod-bundled shaderc, vma, and spirv-cross libraries to Android native builds
+        // Redirect desktop/mod-bundled shaderc, vma, spirv-cross, openal, freetype, and SDL3 libraries to Android native builds
         if (strstr(base, "libshaderc") == base || strstr(base, "liblwjgl_shaderc") == base) {
             void* handle = dlopen_with_lwjgl_natives_fallback("libshaderc.so", mode);
             if (handle != NULL) {
@@ -98,12 +127,30 @@ static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
                 return (jlong) (uintptr_t) handle;
             }
         }
+        if (strstr(base, "libopenal") == base || strstr(filename, "libopenal") != NULL) {
+            void* handle = dlopen_with_lwjgl_natives_fallback("libopenal.so", mode);
+            if (handle != NULL) {
+                return (jlong) (uintptr_t) handle;
+            }
+        }
+        if (strstr(base, "libSDL3.so") == base) {
+            void* handle = dlopen_with_lwjgl_natives_fallback("libSDL3.so", mode);
+            if (handle != NULL) {
+                return (jlong) (uintptr_t) handle;
+            }
+        }
+        if (strstr(base, "libfreetype") == base || strstr(filename, "libfreetype") != NULL) {
+            void* handle = dlopen_with_lwjgl_natives_fallback("libfreetype.so", mode);
+            if (handle != NULL) {
+                return (jlong) (uintptr_t) handle;
+            }
+        }
 
         void* direct = dlopen(filename, mode);
         if (direct != NULL) {
             return (jlong) (uintptr_t) direct;
         }
-        if (slash != NULL && base[0] != '\0') {
+        if (base[0] != '\0') {
             void* fallback = dlopen_with_lwjgl_natives_fallback(base, mode);
             if (fallback != NULL) {
                 printf("LWJGL linkerhook: fallback loaded %s via %s\n", filename, base);
@@ -137,6 +184,10 @@ static jlong ndlsym_bugfix(__attribute__((unused)) JNIEnv *env,
 void installLwjglDlopenHook() {
     __android_log_print(ANDROID_LOG_INFO, "LwjglLinkerHook", "Installing LWJGL dlopen()/dlsym() hooks");
     JNIEnv* env = pojav_environ->runtimeJNIEnvPtr_JRE;
+    if (env == NULL) return;
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
     jclass dynamicLinkLoader = (*env)->FindClass(env, "org/lwjgl/system/linux/DynamicLinkLoader");
     if(dynamicLinkLoader == NULL) {
         __android_log_print(ANDROID_LOG_ERROR, "LwjglLinkerHook", "Failed to find the target class");
@@ -151,4 +202,5 @@ void installLwjglDlopenHook() {
         __android_log_print(ANDROID_LOG_ERROR, "LwjglLinkerHook", "Failed to register the hooked methods");
         (*env)->ExceptionClear(env);
     }
+    (*env)->DeleteLocalRef(env, dynamicLinkLoader);
 }

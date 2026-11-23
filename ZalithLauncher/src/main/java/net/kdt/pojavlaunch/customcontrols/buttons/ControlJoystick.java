@@ -44,7 +44,10 @@ public class ControlJoystick extends JoystickView implements ControlInterface {
 
     private static void sendInput(int[] keys, boolean isDown) {
         for (int key : keys) {
-            CallbackBridge.sendKeyPress(key, CallbackBridge.getCurrentMods(), isDown);
+            if (key > LwjglGlfwKeycode.GLFW_KEY_UNKNOWN) {
+                CallbackBridge.sendKeyPress(key, CallbackBridge.getCurrentMods(), isDown);
+                CallbackBridge.setModifiers(key, isDown);
+            }
         }
     }
 

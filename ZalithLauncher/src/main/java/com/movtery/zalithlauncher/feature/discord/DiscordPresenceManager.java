@@ -110,6 +110,7 @@ public final class DiscordPresenceManager {
     private volatile String mResumeGatewayUrl = "";
     private volatile boolean mConnected = false;
     private volatile boolean mConnecting = false;
+    private volatile int mReconnectAttempts = 0;
     private volatile String mLastError = "";
     private volatile long mSessionStartTimestamp;
     private volatile String mCurrentDetails = "In " + InfoDistributor.APP_NAME + " Menu";
@@ -149,28 +150,38 @@ public final class DiscordPresenceManager {
             editor.putString(KEY_WEBHOOK_URL, obj.optString(KEY_WEBHOOK_URL, ""));
             editor.putString(KEY_ONLINE_STATUS, obj.optString(KEY_ONLINE_STATUS, "online"));
             editor.putString(KEY_CUSTOM_STATE, obj.optString(KEY_CUSTOM_STATE, ""));
-            editor.commit();
+            editor.apply();
         } catch (Throwable ignored) {
         }
     }
 
-    private synchronized void persistToDiskFile() {
-        try {
-            JSONObject obj = new JSONObject();
-            obj.put(KEY_ENABLED, isEnabled());
-            obj.put(KEY_USER_ID, getLinkedUserId());
-            obj.put(KEY_USERNAME, getLinkedUsername());
-            obj.put(KEY_TOKEN, getToken());
-            obj.put(KEY_WEBHOOK_URL, getWebhookUrl());
-            obj.put(KEY_ONLINE_STATUS, getOnlineStatus());
-            obj.put(KEY_CUSTOM_STATE, getCustomState());
-            byte[] bytes = obj.toString().getBytes(StandardCharsets.UTF_8);
-            try (FileOutputStream fos = new FileOutputStream(mConfigFile, false)) {
-                fos.write(bytes);
-                fos.getFD().sync();
+    private void persistToDiskFile() {
+        final boolean enabled = isEnabled();
+        final String userId = getLinkedUserId();
+        final String username = getLinkedUsername();
+        final String token = getToken();
+        final String webhookUrl = getWebhookUrl();
+        final String onlineStatus = getOnlineStatus();
+        final String customState = getCustomState();
+        mScheduler.execute(() -> {
+            synchronized (DiscordPresenceManager.this) {
+                try {
+                    JSONObject obj = new JSONObject();
+                    obj.put(KEY_ENABLED, enabled);
+                    obj.put(KEY_USER_ID, userId);
+                    obj.put(KEY_USERNAME, username);
+                    obj.put(KEY_TOKEN, token);
+                    obj.put(KEY_WEBHOOK_URL, webhookUrl);
+                    obj.put(KEY_ONLINE_STATUS, onlineStatus);
+                    obj.put(KEY_CUSTOM_STATE, customState);
+                    byte[] bytes = obj.toString().getBytes(StandardCharsets.UTF_8);
+                    try (FileOutputStream fos = new FileOutputStream(mConfigFile, false)) {
+                        fos.write(bytes);
+                    }
+                } catch (Throwable ignored) {
+                }
             }
-        } catch (Throwable ignored) {
-        }
+        });
     }
 
     private synchronized void clearInvalidToken(@NonNull String errorMessage) {
@@ -357,7 +368,7 @@ public final class DiscordPresenceManager {
         if (onlineStatus != null && !onlineStatus.isEmpty()) editor.putString(KEY_ONLINE_STATUS, onlineStatus);
         if (customState != null) editor.putString(KEY_CUSTOM_STATE, customState.trim());
         if (webhookUrl != null) editor.putString(KEY_WEBHOOK_URL, webhookUrl.trim());
-        editor.commit();
+        editor.apply();
         persistToDiskFile();
 
         if (!cleanToken.isEmpty() && (cleanId.isEmpty() || cleanUser.isEmpty())) {
@@ -430,7 +441,7 @@ public final class DiscordPresenceManager {
                 .remove(KEY_TOKEN)
                 .remove(KEY_WEBHOOK_URL)
                 .putBoolean(KEY_ENABLED, false)
-                .commit();
+                .apply();
         if (mConfigFile.exists()) {
             //noinspection ResultOfMethodCallIgnored
             mConfigFile.delete();
@@ -624,7 +635,9 @@ public final class DiscordPresenceManager {
                 if (mReconnectFuture != null) {
                     mReconnectFuture.cancel(false);
                 }
-                mReconnectFuture = mScheduler.schedule(this::connectIfNeeded, 2, TimeUnit.SECONDS);
+                int attempt = Math.min(mReconnectAttempts++, 5);
+                long delaySeconds = Math.min(60L, 2L * (1L << attempt));
+                mReconnectFuture = mScheduler.schedule(this::connectIfNeeded, delaySeconds, TimeUnit.SECONDS);
             }
         }
         notifyListeners();
@@ -737,6 +750,7 @@ public final class DiscordPresenceManager {
         if (webSocket != mWebSocket) return;
         mConnected = true;
         mConnecting = false;
+        mReconnectAttempts = 0;
         mLastError = "";
         notifyListeners();
         sendPresenceUpdate();
@@ -756,9 +770,6 @@ public final class DiscordPresenceManager {
                 () -> {
                     if (mWebSocket != webSocket) return;
                     sendHeartbeat(webSocket);
-                    if (mConnected) {
-                        sendPresenceUpdate();
-                    }
                 },
                 safeInterval,
                 safeInterval,
@@ -873,6 +884,7 @@ public final class DiscordPresenceManager {
         if (!isEnabled() || !isConfigured()) return;
         try {
             Intent intent = new Intent("com.discord.intent.action.RPC");
+            intent.setPackage("com.discord");
             intent.putExtra("application_id", DISCORD_APPLICATION_ID);
             intent.putExtra("app_id", DISCORD_APPLICATION_ID);
             intent.putExtra("name", InfoDistributor.APP_NAME);
@@ -910,7 +922,7 @@ public final class DiscordPresenceManager {
                         SharedPreferences.Editor editor = mPrefs.edit();
                         if (!id.isEmpty()) editor.putString(KEY_USER_ID, id);
                         if (!username.isEmpty()) editor.putString(KEY_USERNAME, username);
-                        editor.commit();
+                        editor.apply();
                         persistToDiskFile();
                         notifyListeners();
                     } else if (response.code() == 401 && token.equals(getToken())) {

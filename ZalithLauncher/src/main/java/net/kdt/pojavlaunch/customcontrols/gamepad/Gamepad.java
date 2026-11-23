@@ -180,8 +180,10 @@ public class Gamepad implements GrabListener, GamepadHandler {
                     break;
 
                 default:
-                    sendKeyPress(keycode, CallbackBridge.getCurrentMods(), isDown);
-                    CallbackBridge.setModifiers(keycode, isDown);
+                    if (keycode > LwjglGlfwKeycode.GLFW_KEY_UNKNOWN) {
+                        sendKeyPress(keycode, CallbackBridge.getCurrentMods(), isDown);
+                        CallbackBridge.setModifiers(keycode, isDown);
+                    }
                     break;
             }
         }

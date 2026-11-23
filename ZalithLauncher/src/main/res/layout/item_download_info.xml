@@ -4,15 +4,15 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="@dimen/_8sdp"
-    android:background="@drawable/background_item"
-    android:padding="@dimen/_8sdp"
+    android:layout_marginTop="6dp"
+    android:background="@drawable/background_card"
+    android:padding="10dp"
     app:ripple_for_constraint="true">
 
     <com.google.android.material.imageview.ShapeableImageView
         android:id="@+id/thumbnail_imageview"
-        android:layout_width="@dimen/_54sdp"
-        android:layout_height="@dimen/_54sdp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
@@ -25,17 +25,19 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/background_mod_category"
-        android:paddingVertical="@dimen/_1sdp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="2dp"
         app:layout_constraintBottom_toBottomOf="@+id/title_textview"
-        app:layout_constraintTop_toTopOf="@+id/title_textview"
         app:layout_constraintEnd_toEndOf="parent"
-        android:orientation="horizontal">
+        app:layout_constraintTop_toTopOf="@+id/title_textview">
 
         <ImageView
             android:id="@+id/platform_imageview"
-            android:layout_width="@dimen/_16sdp"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="@dimen/_4sdp"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginEnd="4dp"
             android:scaleType="centerInside"
             tools:ignore="ContentDescription" />
 
@@ -43,9 +45,11 @@
             android:id="@+id/platform_textview"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="@dimen/_8ssp"
-            tools:text="Zalith"
-            tools:ignore="SmallSp" />
+            android:textColor="@color/primary_text"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            tools:ignore="SmallSp"
+            tools:text="Modrinth" />
 
     </LinearLayout>
 
@@ -54,56 +58,61 @@
         style="@style/TextAppearance.AppCompat.Body2"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="@dimen/_8sdp"
-        android:textColor="@color/primary_text"
-        android:textSize="@dimen/_11ssp"
+        android:layout_marginHorizontal="10dp"
+        android:ellipsize="end"
         android:singleLine="true"
+        android:textColor="@color/primary_text"
+        android:textSize="13sp"
+        android:textStyle="bold"
         app:layout_constraintEnd_toStartOf="@+id/platform_layout"
         app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintStart_toEndOf="@+id/thumbnail_imageview"
         app:layout_constraintTop_toTopOf="parent"
-        tools:text="Title" />
+        tools:text="Sodium" />
 
     <com.google.android.flexbox.FlexboxLayout
         android:id="@+id/categories_Layout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginVertical="@dimen/_2sdp"
+        android:layout_marginTop="2dp"
         android:orientation="horizontal"
+        app:alignItems="flex_start"
         app:flexDirection="row"
         app:flexWrap="wrap"
-        app:alignItems="flex_start"
         app:justifyContent="flex_start"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="@+id/title_textview"
-        app:layout_constraintTop_toBottomOf="@+id/title_textview"/>
+        app:layout_constraintTop_toBottomOf="@+id/title_textview" />
 
     <TextView
         android:id="@+id/description_textview"
         style="@style/TextAppearance.AppCompat.Body1"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
         android:ellipsize="end"
-        android:singleLine="true"
-        android:textSize="@dimen/_10ssp"
-        app:layout_constraintHorizontal_bias="0.0"
+        android:maxLines="2"
+        android:textColor="@color/secondary_text"
+        android:textSize="11sp"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintStart_toStartOf="@+id/title_textview"
         app:layout_constraintTop_toBottomOf="@+id/categories_Layout"
         tools:ignore="SmallSp"
-        tools:text="Feed the beast - Reforged is a machine and magic focused modpack, with no respect for the minimum requirements of minecraft. Very long text" />
+        tools:text="Modern rendering engine and client-side optimization mod for Minecraft." />
 
     <com.google.android.flexbox.FlexboxLayout
         android:id="@+id/tags_Layout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
         android:orientation="horizontal"
+        app:alignItems="flex_start"
         app:flexDirection="row"
         app:flexWrap="wrap"
-        app:alignItems="flex_start"
         app:justifyContent="flex_start"
-        app:layout_constraintStart_toStartOf="@+id/description_textview"
         app:layout_constraintEnd_toEndOf="@+id/description_textview"
-        app:layout_constraintTop_toBottomOf="@+id/description_textview"/>
+        app:layout_constraintStart_toStartOf="@+id/description_textview"
+        app:layout_constraintTop_toBottomOf="@+id/description_textview" />
 
 </com.movtery.zalithlauncher.ui.layout.AnimConstraintLayout>

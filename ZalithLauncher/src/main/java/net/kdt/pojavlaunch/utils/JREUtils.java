@@ -133,8 +133,18 @@ public final class JREUtils {
         File modernFreetype = new File(DIR_NATIVE_LIB, "libfreetype.so");
         dlopen(modernFreetype.isFile() ? modernFreetype.getAbsolutePath() : findInLdLibPath("libfreetype.so"));
         dlopen(findInLdLibPath("libfontmanager.so"));
-        for (File f : locateLibs(new File(jreHome, Tools.DIRNAME_HOME_JRE))) {
-            dlopen(f.getAbsolutePath());
+        List<File> pending = new ArrayList<>(locateLibs(new File(jreHome, Tools.DIRNAME_HOME_JRE)));
+        for (int pass = 0; pass < 3 && !pending.isEmpty(); pass++) {
+            List<File> retry = new ArrayList<>();
+            for (File f : pending) {
+                if (!dlopen(f.getAbsolutePath())) {
+                    retry.add(f);
+                }
+            }
+            if (retry.size() == pending.size()) {
+                break;
+            }
+            pending = retry;
         }
     }
 
@@ -329,6 +339,7 @@ public final class JREUtils {
             String line;
             while ((line = reader.readLine()) != null) {
                 int index = line.indexOf("=");
+                if (index <= 0) continue;
                 envMap.put(line.substring(0, index), line.substring(index + 1));
             }
             reader.close();
@@ -390,7 +401,9 @@ public final class JREUtils {
     }
 
     private static void initGraphicAndSoundEngine(boolean renderer) {
-        dlopen(DIR_NATIVE_LIB + "/libopenal.so");
+        if (!dlopen(DIR_NATIVE_LIB + "/libopenal.so")) {
+            dlopen(findInLdLibPath("libopenal.so"));
+        }
 
         if (!renderer) return;
 
@@ -404,8 +417,15 @@ public final class JREUtils {
             });
         }
 
-        if (!dlopen(rendererLib)) {
-            throw new IllegalStateException("Failed to load renderer " + rendererLib + "; check the renderer/ABI and native loader log");
+        boolean rendererLoaded = rendererLib != null && dlopen(rendererLib);
+        if (!rendererLoaded && rendererLib != null) {
+            rendererLoaded = dlopen(findInLdLibPath(rendererLib));
+        }
+        if (!rendererLoaded) {
+            String fallbackGl4es = DIR_NATIVE_LIB + "/libgl4es_114.so";
+            if (!dlopen(fallbackGl4es)) {
+                throw new IllegalStateException("Failed to load renderer " + rendererLib + "; check the renderer/ABI and native loader log");
+            }
         }
     }
 

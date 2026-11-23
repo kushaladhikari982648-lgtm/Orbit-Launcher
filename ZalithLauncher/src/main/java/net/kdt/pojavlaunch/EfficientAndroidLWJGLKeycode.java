@@ -179,6 +179,7 @@ public class EfficientAndroidLWJGLKeycode {
     }
 
     public static void execKey(KeyEvent keyEvent, int valueIndex) {
+        if (valueIndex < 0 || valueIndex >= sLwjglKeycodes.length) return;
         //valueIndex points to where the value is stored in the array.
         CallbackBridge.holdingAlt = keyEvent.isAltPressed();
         CallbackBridge.holdingCapslock = keyEvent.isCapsLockOn();
@@ -202,6 +203,9 @@ public class EfficientAndroidLWJGLKeycode {
     }
 
     public static short getValueByIndex(int index) {
+        if (index < 0 || index >= sLwjglKeycodes.length) {
+            return LwjglGlfwKeycode.GLFW_KEY_UNKNOWN;
+        }
         return sLwjglKeycodes[index];
     }
 
@@ -216,6 +220,19 @@ public class EfficientAndroidLWJGLKeycode {
             if(sLwjglKeycodes[i] == lwjglKey) return i;
         }
         return 0;
+    }
+
+    /**
+     * Resolve either a direct GLFW keycode or a legacy mapping table index to a valid GLFW keycode.
+     */
+    public static short resolveLwjglKeycode(int keycodeOrIndex) {
+        if (keycodeOrIndex >= 0 && keycodeOrIndex < sLwjglKeycodes.length) {
+            return sLwjglKeycodes[keycodeOrIndex];
+        }
+        if (keycodeOrIndex >= LwjglGlfwKeycode.GLFW_KEY_SPACE && keycodeOrIndex <= LwjglGlfwKeycode.GLFW_KEY_LAST) {
+            return (short) keycodeOrIndex;
+        }
+        return LwjglGlfwKeycode.GLFW_KEY_UNKNOWN;
     }
 
     private static android.util.SparseIntArray sAndroidByLwjgl;

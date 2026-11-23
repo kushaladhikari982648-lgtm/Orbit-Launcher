@@ -19,10 +19,13 @@ static bool gurkha_init_runtime_bridge(JNIEnv *env, const char *backend,
     if (backend && strcmp(backend, "sdl") == 0) return true;
     jclass local = (*env)->FindClass(env, "org/lwjgl/glfw/GLFW");
     jobject keys = NULL, buttons = NULL;
-    if (!local) return false;
+    if (!local) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        return false;
+    }
     bridge->glfw = (*env)->NewGlobalRef(env, local);
     (*env)->DeleteLocalRef(env, local);
-    if (!bridge->glfw) return false;
+    if (!bridge->glfw) goto failed;
     bridge->set_attrib = (*env)->GetStaticMethodID(env, bridge->glfw, "glfwSetWindowAttrib", "(JII)V");
     if (!bridge->set_attrib) goto failed;
     bridge->resize = (*env)->GetStaticMethodID(env, bridge->glfw, "internalWindowSizeChanged", "(JII)V");
@@ -42,6 +45,7 @@ static bool gurkha_init_runtime_bridge(JNIEnv *env, const char *backend,
     (*env)->DeleteLocalRef(env, buttons);
     return true;
 failed:
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     (*env)->DeleteLocalRef(env, keys);
     (*env)->DeleteLocalRef(env, buttons);
     (*env)->DeleteGlobalRef(env, bridge->glfw);

@@ -95,6 +95,7 @@ public class CallbackBridge {
     }
 
     public static void sendKeycode(int keycode, char keychar, int scancode, int modifiers, boolean isDown) {
+        modifiers &= 0xFF;
         // TODO CHECK: This may cause input issue, not receive input!
         if(keycode != 0)  nativeSendKey(keycode,scancode,isDown ? 1 : 0, modifiers);
         if(isDown && keychar != '\u0000') {
@@ -116,6 +117,7 @@ public class CallbackBridge {
     }
 
     public static void sendChar(char keychar, int modifiers){
+        modifiers &= 0xFF;
         nativeSendCharMods(keychar,modifiers);
         nativeSendChar(keychar);
         if (!MinecraftGLSurface.sdlEnabled) return;
@@ -145,8 +147,11 @@ public class CallbackBridge {
     }
 
     public static void sendMouseKeycode(int button, int modifiers, boolean isDown) {
+        if (button < LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_1 || button > LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LAST) {
+            return;
+        }
         // if (isGrabbing()) DEBUG_STRING.append("MouseGrabStrace: " + android.util.Log.getStackTraceString(new Throwable()) + "\n");
-        nativeSendMouseButton(button, isDown ? 1 : 0, modifiers);
+        nativeSendMouseButton(button, isDown ? 1 : 0, modifiers & 0xFF);
         if (!MinecraftGLSurface.sdlEnabled) return;
         nativeEnsureSdlKeyboardFocus(false);
         int androidButton;

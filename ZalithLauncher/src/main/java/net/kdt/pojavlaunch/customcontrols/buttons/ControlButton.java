@@ -190,10 +190,10 @@ public class ControlButton extends TextView implements ControlInterface {
     public void sendKeyPresses(boolean isDown){
         setActivated(isDown);
         for(int keycode : mProperties.keycodes){
-            if(keycode >= GLFW_KEY_UNKNOWN){
+            if(keycode > GLFW_KEY_UNKNOWN){
                 sendKeyPress(keycode, CallbackBridge.getCurrentMods(), isDown);
                 CallbackBridge.setModifiers(keycode, isDown);
-            }else{
+            }else if (keycode < 0) {
                 sendSpecialKey(keycode, isDown);
             }
         }

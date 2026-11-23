@@ -15,8 +15,7 @@
         android:layout_height="match_parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@id/operation_layout"
-        app:layout_constraintHorizontal_weight="6.5"
-        app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
         <androidx.constraintlayout.widget.ConstraintLayout
@@ -127,19 +126,21 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/operation_layout"
-        android:layout_width="0dp"
+        android:layout_width="184dp"
         android:layout_height="match_parent"
+        android:layout_marginVertical="4dp"
+        android:layout_marginEnd="4dp"
+        android:background="@drawable/mc_panel"
+        android:padding="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_weight="3"
-        app:layout_constraintStart_toEndOf="@id/account_menu"
         app:layout_constraintTop_toTopOf="parent">
 
         <View
             android:id="@+id/shadowView"
             android:layout_width="@dimen/_4sdp"
             android:layout_height="match_parent"
-            android:background="@drawable/shadow_gradient_right"
+            android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -148,7 +149,7 @@
             android:id="@+id/operation_main_layout"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:background="@color/menu_overlay"
+            android:background="@android:color/transparent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"

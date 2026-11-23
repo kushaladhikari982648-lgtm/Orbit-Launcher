@@ -9,6 +9,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <time.h>
 #include <environ/environ.h>
 
 #include "stdio_is.h"
@@ -47,7 +48,6 @@ static bool recordBytes(const char* buf, size_t len, bool newline) {
             ssize_t count;
             do { count = write(latestlog_fd, "\n", 1); } while (count < 0 && errno == EINTR);
         }
-        fdatasync(latestlog_fd);
     }
     pthread_mutex_unlock(&file_lock);
     return true;
@@ -65,9 +65,24 @@ static void notifyListener(JNIEnv *env, jstring text) {
     }
 }
 
+static void notifyListenerUtf(JNIEnv *env, const char *buf) {
+    pthread_mutex_lock(&listener_lock);
+    jobject listener = logListener ? (*env)->NewLocalRef(env, logListener) : NULL;
+    pthread_mutex_unlock(&listener_lock);
+    if (listener) {
+        jstring writeString = (*env)->NewStringUTF(env, buf);
+        if (writeString) {
+            (*env)->CallVoidMethod(env, listener, logger_onEventLogged, writeString);
+            (*env)->DeleteLocalRef(env, writeString);
+        }
+        (*env)->DeleteLocalRef(env, listener);
+        // A failed UI listener must not kill native file capture on a low-memory phone.
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+}
+
 static void *logger_thread() {
     JNIEnv *env;
-    jstring writeString;
 
     JavaVM* dvm = pojav_environ->dalvikJavaVMPtr;
     bool attached = (*dvm)->AttachCurrentThread(dvm, &env, NULL) == JNI_OK;
@@ -88,10 +103,13 @@ static void *logger_thread() {
         }
         buf[rsize]=0x00;
         if (shouldRecordString && attached) {
-            writeString = (*env)->NewStringUTF(env, buf);
-            if (writeString) { notifyListener(env, writeString); (*env)->DeleteLocalRef(env, writeString); }
-            // A failed UI listener must not kill native file capture on a low-memory phone.
-            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            // Only allocate JNI Strings when a UI log listener is actively attached
+            pthread_mutex_lock(&listener_lock);
+            bool hasActiveListener = (logListener != NULL);
+            pthread_mutex_unlock(&listener_lock);
+            if (hasActiveListener) {
+                notifyListenerUtf(env, buf);
+            }
         }
     }
     if (attached) (*dvm)->DetachCurrentThread(dvm);
@@ -146,7 +164,10 @@ Java_net_kdt_pojavlaunch_Logger_begin(JNIEnv *env, __attribute((unused)) jclass 
         // Reopening the log must not create a second pipe reader or leak the first one.
         pthread_mutex_lock(&file_lock);
         int old = latestlog_fd; latestlog_fd = file;
-        if (old >= 0) close(old);
+        if (old >= 0) {
+            fdatasync(old);
+            close(old);
+        }
         pthread_mutex_unlock(&file_lock);
     }
 }
@@ -162,6 +183,9 @@ static void drainPipeToLog(void) {
     while ((n = read(pfd[0], drain_buf, sizeof(drain_buf))) > 0) {
         recordBuffer(drain_buf, (size_t)n);
     }
+    pthread_mutex_lock(&file_lock);
+    if (latestlog_fd >= 0) fdatasync(latestlog_fd);
+    pthread_mutex_unlock(&file_lock);
 }
 
 _Noreturn void nominal_exit(int code, bool is_signal) {

@@ -250,5 +250,40 @@ class NativeLaunchHardeningTests(unittest.TestCase):
         all_settings = (SRC/'com/movtery/zalithlauncher/setting/AllSettings.kt').read_text()
         self.assertIn('val gameMenuShowFPS = BooleanSettingUnit("gameMenuShowFPS", true)', all_settings)
 
+    def test_lwjgl_mapping_native_loading_and_background_overhead_fixes(self):
+        input_bridge = (JNI/'input_bridge_v3.c').read_text()
+        self.assertIn('short idx = (short)(key - 31);', input_bridge)
+        self.assertIn('if (pojav_environ->keyDownBuffer != NULL && idx >= 0 && idx < 317) {', input_bridge)
+        self.assertIn('if (pojav_environ->mouseDownBuffer != NULL && button >= 0 && button < 8) {', input_bridge)
+        self.assertIn('int masked_mods = (int)(mods & 0xFF);', input_bridge)
 
+        lwjgl_hook = (JNI/'lwjgl_dlopen_hook.c').read_text()
+        self.assertIn('resolve_bare_library_in_paths', lwjgl_hook)
+        self.assertIn('dlopen_with_lwjgl_natives_fallback', lwjgl_hook)
+        self.assertIn('strstr(filename, "libopenal") != NULL', lwjgl_hook)
+        self.assertIn('strstr(filename, "libfreetype") != NULL', lwjgl_hook)
+
+        stdio_is = (JNI/'stdio_is.c').read_text()
+        self.assertIn('bool hasActiveListener = (logListener != NULL);', stdio_is)
+
+        glfw_java = (ROOT/'jre_lwjgl3glfw/src/main/java/org/lwjgl/glfw/GLFW.java').read_text()
+        self.assertIn('if (key < GLFW_KEY_SPACE || key > GLFW_KEY_LAST) {', glfw_java)
+        self.assertIn('if (button < 0 || button >= mouseDownBuffer.capacity()) {', glfw_java)
+
+        keycode_map = (SRC/'net/kdt/pojavlaunch/EfficientAndroidLWJGLKeycode.java').read_text()
+        self.assertIn('public static short resolveLwjglKeycode(int keycodeOrIndex)', keycode_map)
+        self.assertIn('if (index < 0 || index >= sLwjglKeycodes.length)', keycode_map)
+
+        memory_utils = (SRC/'com/movtery/zalithlauncher/utils/platform/MemoryUtils.kt').read_text()
+        self.assertIn('MEMORY_CACHE_TTL_MS = 1500L', memory_utils)
+        self.assertIn('getMemoryInfoCached', memory_utils)
+
+        discord_mgr = (SRC/'com/movtery/zalithlauncher/feature/discord/DiscordPresenceManager.java').read_text()
+        self.assertIn('mReconnectAttempts', discord_mgr)
+        self.assertIn('intent.setPackage("com.discord");', discord_mgr)
+        self.assertNotIn('fos.getFD().sync()', discord_mgr)
+
+
+if __name__ == '__main__':
+    unittest.main()
 
