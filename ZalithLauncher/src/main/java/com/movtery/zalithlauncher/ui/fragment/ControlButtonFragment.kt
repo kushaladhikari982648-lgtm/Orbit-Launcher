@@ -26,6 +26,7 @@ import com.movtery.zalithlauncher.ui.dialog.TipDialog
 import com.movtery.zalithlauncher.ui.subassembly.customcontrols.ControlInfoData
 import com.movtery.zalithlauncher.ui.subassembly.customcontrols.ControlSelectedListener
 import com.movtery.zalithlauncher.ui.subassembly.customcontrols.ControlsListViewCreator
+import com.movtery.zalithlauncher.ui.subassembly.customcontrols.EditControlData
 import com.movtery.zalithlauncher.ui.subassembly.customcontrols.EditControlData.Companion.createNewControlFile
 import com.movtery.zalithlauncher.ui.subassembly.view.SearchViewWrapper
 import com.movtery.zalithlauncher.utils.NewbieGuideUtils
