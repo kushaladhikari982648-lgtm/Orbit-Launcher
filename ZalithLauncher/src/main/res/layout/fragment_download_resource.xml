@@ -129,7 +129,7 @@
 
             <TextView
                 android:id="@+id/search_title"
-                style="@style/ModernSectionTitle"
+                style="@style/MinecraftLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/download_ui_search"
@@ -179,7 +179,7 @@
 
                     <com.movtery.zalithlauncher.ui.view.AnimButton
                         android:id="@+id/install_button"
-                        style="@style/ModernButton"
+                        style="@style/ModernNav"
                         android:layout_width="match_parent"
                         android:layout_height="32dp"
                         android:text="@string/download_ui_install_local"
@@ -196,7 +196,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_mc_version"
-                            android:textColor="@color/secondary_text"
+                            android:textColor="@color/menu_bar_text"
                             android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
@@ -228,7 +228,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_platform"
-                            android:textColor="@color/secondary_text"
+                            android:textColor="@color/menu_bar_text"
                             android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
@@ -260,8 +260,8 @@
                             android:id="@+id/sort_textview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/download_ui_sort"
-                            android:textColor="@color/secondary_text"
+                            android:text="@string/download_ui_sort_by"
+                            android:textColor="@color/menu_bar_text"
                             android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
@@ -294,7 +294,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_category"
-                            android:textColor="@color/secondary_text"
+                            android:textColor="@color/menu_bar_text"
                             android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
@@ -327,7 +327,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/download_ui_modloader"
-                            android:textColor="@color/secondary_text"
+                            android:textColor="@color/menu_bar_text"
                             android:textSize="10sp"
                             app:layout_constraintTop_toTopOf="parent" />
 
@@ -355,7 +355,7 @@
 
             <com.movtery.zalithlauncher.ui.view.AnimButton
                 android:id="@+id/reset"
-                style="@style/ModernButton"
+                style="@style/ModernNav"
                 android:layout_width="0dp"
                 android:layout_height="32dp"
                 android:layout_marginEnd="3dp"
@@ -367,7 +367,7 @@
 
             <com.movtery.zalithlauncher.ui.view.AnimButton
                 android:id="@+id/return_button"
-                style="@style/ModernButton"
+                style="@style/ModernNav"
                 android:layout_width="0dp"
                 android:layout_height="32dp"
                 android:layout_marginStart="3dp"

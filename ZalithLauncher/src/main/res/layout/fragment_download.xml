@@ -150,7 +150,7 @@
                     android:layout_marginStart="4dp"
                     android:background="@android:color/transparent"
                     android:scaleType="fitCenter"
-                    app:srcCompat="@drawable/ic_world" />
+                    app:srcCompat="@drawable/ic_profile_saves" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -181,7 +181,7 @@
                     android:layout_marginStart="4dp"
                     android:background="@android:color/transparent"
                     android:scaleType="fitCenter"
-                    app:srcCompat="@drawable/ic_shader_pack" />
+                    app:srcCompat="@drawable/ic_profile_shader_pack" />
 
                 <TextView
                     android:layout_width="match_parent"
