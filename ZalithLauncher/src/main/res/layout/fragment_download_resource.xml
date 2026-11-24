@@ -354,15 +354,28 @@
             </ScrollView>
 
             <com.movtery.zalithlauncher.ui.view.AnimButton
+                android:id="@+id/reset"
+                style="@style/ModernButton"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="3dp"
+                android:text="@string/generic_reset"
+                android:textSize="11sp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/return_button"
+                app:layout_constraintStart_toStartOf="parent" />
+
+            <com.movtery.zalithlauncher.ui.view.AnimButton
                 android:id="@+id/return_button"
                 style="@style/ModernButton"
                 android:layout_width="0dp"
                 android:layout_height="32dp"
+                android:layout_marginStart="3dp"
                 android:text="@string/generic_return"
                 android:textSize="11sp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent" />
+                app:layout_constraintStart_toEndOf="@+id/reset" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 

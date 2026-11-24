@@ -140,6 +140,8 @@ jobs:
   BuildArm32And64Only:
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     strategy:
       matrix:
         arch: [ "arm", "arm64" ]
@@ -157,13 +159,63 @@ jobs:
         run: |
           set -o pipefail
           chmod +x gradlew
-          ./gradlew jre_lwjgl3glfw:build --no-daemon
+          ./gradlew jre_lwjgl3glfw:build --no-daemon 2>&1 | tee "$RUNNER_TEMP/build.log"
       - name: Build Debug ${{ matrix.arch }}
         env:
           CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         run: |
           set -o pipefail
-          ./gradlew ZalithLauncher:assembleDebug -Darch=${{ matrix.arch }} --no-daemon
+          ./gradlew ZalithLauncher:assembleDebug -Darch=${{ matrix.arch }} --no-daemon 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+      - name: Report build errors
+        if: failure()
+        run: |
+          python3 - "$RUNNER_TEMP/build.log" <<'PY'
+          import os, re, sys
+          path = sys.argv[1]
+          lines = open(path, errors="replace").read().splitlines() if os.path.exists(path) else []
+          idx = set()
+          for i, l in enumerate(lines):
+              if re.search(r"^e: |error:|\berror\b.*\.(java|kt|c|h|xml):|What went wrong|Execution failed|cannot find symbol|Unresolved reference|^> ", l):
+                  idx.add(i)
+              if "What went wrong" in l:
+                  idx.update(range(i + 1, min(i + 8, len(lines))))
+          keep = [lines[i] for i in sorted(idx) if lines[i].strip()]
+          msg = "\n".join(keep[:80]) or "\n".join(lines[-40:]) or "No Gradle output"
+          print("::error title=Build failed::" + msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+          PY
+      - name: Publish direct APK blobs for workspace download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          python3 - <<'PY'
+          import base64, glob, hashlib, json, os, subprocess
+          apks = glob.glob("ZalithLauncher/build/outputs/apk/debug/*.apk")
+          assert len(apks) == 1, f"Expected 1 APK, found {apks}"
+          apk_path = apks[0]
+          data = open(apk_path, "rb").read()
+          sha256 = hashlib.sha256(data).hexdigest()
+          chunk_size = 18 * 1024 * 1024
+          blobs = []
+          repo = os.environ["GITHUB_REPOSITORY"]
+          for offset in range(0, len(data), chunk_size):
+              chunk = data[offset:offset + chunk_size]
+              payload = json.dumps({"content": base64.b64encode(chunk).decode("ascii"), "encoding": "base64"}).encode("utf-8")
+              res = subprocess.check_output(
+                  ["gh", "api", f"repos/{repo}/git/blobs", "--method", "POST", "--input", "-"],
+                  input=payload
+              )
+              blob_sha = json.loads(res)["sha"]
+              blobs.append(blob_sha)
+          manifest = {
+              "arch": os.environ["ARCH"],
+              "filename": os.path.basename(apk_path),
+              "size": len(data),
+              "sha256": sha256,
+              "blobs": blobs,
+          }
+          print(f"::notice title=APK_BLOBS_{os.environ['ARCH']}::" + json.dumps(manifest))
+          PY
       - name: Upload Direct APK ${{ matrix.arch }}
         uses: actions/upload-artifact@v7
         with:
