@@ -146,7 +146,7 @@ class ModernUiTests(unittest.TestCase):
         props = (ROOT / 'ZalithLauncher/gradle.properties').read_text()
         self.assertIn('launcher_name=OrbitLauncher', props)
         self.assertIn('launcher_app_name=Orbit Launcher', props)
-        self.assertIn('launcher_version_name=1.0.2', props)
+        self.assertIn('launcher_version_name=1.0.3', props)
         url_mgr = (SRC / 'com/movtery/zalithlauncher/utils/path/UrlManager.kt').read_text()
         self.assertIn('kushaladhikari982648-lgtm/Orbit-Launcher', url_mgr)
         colors = (RES / 'values/colors.xml').read_text()

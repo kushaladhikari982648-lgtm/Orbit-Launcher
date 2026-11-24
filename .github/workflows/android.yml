@@ -223,6 +223,85 @@ jobs:
           path: ZalithLauncher/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+  PublishPreRelease103:
+    needs: [BuildArm32And64Only, CompatibilityChecks]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: OrbitLauncher-direct-*
+          path: direct-apks
+      - name: Verify and publish ver 1.0.3 pre-release (32-bit and 64-bit only)
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil, subprocess, zipfile
+
+          props = dict(
+              line.split("=", 1)
+              for line in pathlib.Path("ZalithLauncher/gradle.properties").read_text().splitlines()
+              if line and not line.startswith("#") and "=" in line
+          )
+          version = props["launcher_version_name"].strip()
+          tag = f"preview-v{version}"
+          title = f"ver {version}"
+          out = pathlib.Path("release-103")
+          out.mkdir(exist_ok=True)
+
+          records = []
+          for arch, suffix, wanted_abi in [
+              ("arm", "armeabi-v7a", {"armeabi-v7a"}),
+              ("arm64", "arm64-v8a", {"arm64-v8a"}),
+          ]:
+              apks = list((pathlib.Path("direct-apks") / f"OrbitLauncher-direct-{arch}").rglob("*.apk"))
+              assert len(apks) == 1, f"Expected 1 APK for {arch}, got {apks}"
+              apk = apks[0]
+              with zipfile.ZipFile(apk) as zf:
+                  actual_abis = {n.split("/")[1] for n in zf.namelist() if n.startswith("lib/") and n.endswith(".so")}
+                  assert actual_abis == wanted_abi, f"ABI mismatch for {arch}: {actual_abis} != {wanted_abi}"
+              dest = out / f"OrbitLauncher-{version}-debug-{suffix}.apk"
+              shutil.copyfile(apk, dest)
+              sha = hashlib.sha256(dest.read_bytes()).hexdigest()
+              records.append({"file": dest.name, "arch": arch, "abi": suffix, "bytes": dest.stat().st_size, "sha256": sha})
+
+          build_info = {
+              "version": version,
+              "version_code": int(props["launcher_version_code"].strip()),
+              "commit": os.environ["GITHUB_SHA"],
+              "run": os.environ["GITHUB_RUN_ID"],
+              "package": "com.gurkha.launcher.debug",
+              "build_type": "debug",
+              "apks": records,
+          }
+          (out / "BUILD_INFO.json").write_text(json.dumps(build_info, indent=2) + "\n")
+          (out / "SHA256SUMS.txt").write_text(
+              "\n".join(f"{r['sha256']}  {r['file']}" for r in records) + "\n"
+          )
+
+          notes_file = f".github/release-notes/{tag}.md"
+          assets = [str(p) for p in sorted(out.iterdir())]
+          view = subprocess.run(["gh", "release", "view", tag], capture_output=True, text=True)
+          if view.returncode == 0:
+              subprocess.check_call(["gh", "release", "upload", tag, *assets, "--clobber"])
+              subprocess.check_call(["gh", "release", "edit", tag, "--title", title, "--notes-file", notes_file, "--prerelease", "--draft=false"])
+          else:
+              subprocess.check_call([
+                  "gh", "release", "create", tag, *assets,
+                  "--target", os.environ["GITHUB_SHA"],
+                  "--title", title,
+                  "--notes-file", notes_file,
+                  "--prerelease",
+              ])
+          rel = json.loads(subprocess.check_output(["gh", "release", "view", tag, "--json", "id,url,tagName,name,isPrerelease,isDraft,assets"], text=True))
+          print("::notice title=PUBLISHED_RELEASE_103::" + json.dumps(rel))
+          PY
+
   LwjglApiChecks:
     needs: BuildDebug
     runs-on: ubuntu-22.04
