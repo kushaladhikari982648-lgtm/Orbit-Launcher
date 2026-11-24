@@ -32,6 +32,8 @@ public class NativesExtractor {
      */
     private static ArrayList<String> createLibraryBlacklist() {
         String[] includedLibraryNames = new File(PathManager.DIR_NATIVE_LIB).list();
+        // list() returns null when the directory is missing or unreadable.
+        if (includedLibraryNames == null) return new ArrayList<>(0);
         ArrayList<String> blacklist = new ArrayList<>(includedLibraryNames.length);
         for(String libraryName : includedLibraryNames) {
             // allow overriding jnidispatch (as the integrated version may be too old)
@@ -58,6 +60,9 @@ public class NativesExtractor {
     }
 
     public void extractFromAar(File source) throws IOException {
+        // A missing/empty archive means its download failed or was cleaned up; the APK's own
+        // jniLibs already provide libjnidispatch, so treat this as a no-op instead of throwing.
+        if (!source.isFile() || source.length() == 0) return;
         byte[] buffer = new byte[8192];
         try (FileInputStream fileInputStream = new FileInputStream(source);
              ZipInputStream zipInputStream = new ZipInputStream(fileInputStream)) {

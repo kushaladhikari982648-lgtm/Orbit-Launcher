@@ -37,6 +37,12 @@ class LaunchArgs(
         val argsList: MutableList<String> = ArrayList()
 
         argsList.addAll(getJavaArgs())
+        // Package-style metadata pins diagnostic JVM flags ("+jvmArgs") for the Java 25 runtime
+        // of Minecraft 26.x (e.g. -XX:-UseBASE64Intrinsics). Older JVMs may not know the flags,
+        // so only pass them when the selected runtime is the one they were written for.
+        if (runtime.javaVersion >= 25) {
+            versionInfo.plusJvmArgs?.let { pinnedArgs -> argsList.addAll(pinnedArgs) }
+        }
         argsList.addAll(getMinecraftJVMArgs())
         argsList.add("-cp")
         // Minecraft 26.3+ (SDL3) gets LWJGL 3.4.1 instead of the launcher's LWJGL 3.3.6 + GLFW stub, and so do the

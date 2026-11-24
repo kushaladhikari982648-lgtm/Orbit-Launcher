@@ -52,6 +52,7 @@ import net.kdt.pojavlaunch.memory.SelfMapsParser;
 import net.kdt.pojavlaunch.multirt.MultiRTUtils;
 import net.kdt.pojavlaunch.utils.FileUtils;
 import net.kdt.pojavlaunch.value.DependentLibrary;
+import net.kdt.pojavlaunch.value.MinecraftClientInfo;
 import net.kdt.pojavlaunch.value.MinecraftLibraryArtifact;
 
 import org.apache.commons.codec.binary.Hex;
@@ -71,7 +72,9 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 
 @SuppressWarnings("IOStreamConstructor")
 public final class Tools {
@@ -384,23 +387,164 @@ public final class Tools {
         ContextExecutor.executeTask(new ShowErrorActivity.RemoteErrorTask(e, rolledMessage));
     }
 
-    private static boolean checkRules(JMinecraftVersionList.Arguments.ArgValue.ArgRules[] rules) {
-        if(rules == null) return true; // always allow
+    /**
+     * Evaluate a library's OS rules for the device we run on (Android reports os.name "Linux").
+     * Rules are applied in order and the last matching rule wins; when no rule matches, the
+     * default is the opposite of the first rule (Mojang writes either [{allow}, {disallow, osx}]
+     * or [{allow, osx}] — "allow there only"). Names like osx-arm64 or windows-arm64 simply do
+     * not match "Linux", so desktop-only libraries are excluded on every Android ABI.
+     */
+    static boolean checkRules(JMinecraftVersionList.Arguments.ArgValue.ArgRules[] rules) {
+        if (rules == null || rules.length == 0) return true; // always allow
+        boolean allowed = rules[0] != null && !"allow".equals(rules[0].action);
+        String osName = System.getProperty("os.name", "linux").toLowerCase(Locale.ROOT);
         for (JMinecraftVersionList.Arguments.ArgValue.ArgRules rule : rules) {
-            if (rule.action.equals("allow") && rule.os != null && rule.os.name.equals("osx")) {
-                return false; //disallow
+            if (rule == null || rule.action == null) continue;
+            JMinecraftVersionList.Arguments.ArgValue.ArgRules.ArgOS os = rule.os;
+            if (os != null && os.name != null) {
+                if (!osName.equalsIgnoreCase(os.name)) continue; // rule targets another OS
+            } else if (os != null && os.version != null) {
+                // Version guards are written for desktop OS builds; Android can never match
+                // them, and they carry no OS name, so they are ignored here.
+                continue;
+            }
+            allowed = "allow".equals(rule.action);
+        }
+        return allowed;
+    }
+
+    /**
+     * Whether the Maven classifier of a library name (the part after the 4th colon, e.g.
+     * {@code io.netty:netty-transport-native-epoll:4.2.7.Final:linux-x86_64}) matches this
+     * device's CPU architecture and OS. This keeps the x86_64 netty natives out of 32-bit and
+     * 64-bit ARM builds (and vice versa) and drops mac/windows classifier artifacts everywhere.
+     */
+    public static boolean classifierSupportedByDevice(String libName) {
+        if (libName == null) return true;
+        int lastColon = libName.lastIndexOf(':');
+        if (lastColon < 0 || lastColon == libName.length() - 1) return true;
+        String classifier = libName.substring(lastColon + 1);
+        // No classifier: the last segment is the version (versions start with a digit).
+        if (classifier.isEmpty() || Character.isDigit(classifier.charAt(0))) return true;
+        String lower = classifier.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("linux-x86_64")) return DEVICE_ARCHITECTURE == Architecture.ARCH_X86_64;
+        if (lower.startsWith("linux-aarch_64") || lower.startsWith("linux-arm64")) return DEVICE_ARCHITECTURE == Architecture.ARCH_ARM64;
+        if (lower.startsWith("linux-x86")) return DEVICE_ARCHITECTURE == Architecture.ARCH_X86;
+        if (lower.startsWith("linux-arm")) return DEVICE_ARCHITECTURE == Architecture.ARCH_ARM;
+        if (lower.startsWith("osx") || lower.startsWith("macos") || lower.startsWith("darwin")) return false;
+        if (lower.startsWith("windows")) return false;
+        if (lower.startsWith("natives-osx") || lower.startsWith("natives-macos")
+                || lower.startsWith("natives-windows")) return false;
+        return true;
+    }
+
+    /** Whether a library may be downloaded and put on the classpath on this device. */
+    public static boolean isLibraryEnabledForDevice(DependentLibrary library) {
+        if (library == null) return false;
+        return checkRules(library.rules) && classifierSupportedByDevice(library.name);
+    }
+
+    /**
+     * Fold package-style (formatVersion 2) metadata into the classic fields the launcher
+     * consumes, so version JSONs from either format download and launch identically.
+     * Safe to call on already-classic JSON — every step is a no-op when the field exists.
+     */
+    public static void normalizeVersionInfo(JMinecraftVersionList.Version versionInfo, String fallbackId) {
+        if (versionInfo == null) return;
+        // "version" replaces "id" in package-style files.
+        if (!isValidString(versionInfo.id)) {
+            if (isValidString(versionInfo.version)) {
+                versionInfo.id = versionInfo.version;
+            } else if (!isValidString(versionInfo.inheritsFrom)) {
+                // Vanilla profile: the id doubles as the launch version name. Loader profiles
+                // (inheritsFrom set) keep a null id so inheritance keeps using the parent's.
+                versionInfo.id = fallbackId;
             }
         }
-        return true; // allow if none match
+        // The client jar lives under mainJar instead of downloads.client.
+        if ((versionInfo.downloads == null || versionInfo.downloads.get("client") == null)
+                && versionInfo.mainJar != null && versionInfo.mainJar.downloads != null
+                && versionInfo.mainJar.downloads.artifact != null) {
+            MinecraftLibraryArtifact artifact = versionInfo.mainJar.downloads.artifact;
+            if (isValidString(artifact.url)) {
+                MinecraftClientInfo clientInfo = new MinecraftClientInfo();
+                clientInfo.url = artifact.url;
+                clientInfo.sha1 = artifact.sha1;
+                clientInfo.size = artifact.size;
+                if (versionInfo.downloads == null) versionInfo.downloads = new HashMap<>();
+                versionInfo.downloads.put("client", clientInfo);
+            }
+        }
+        // The top-level "assets" name is omitted; its value equals the asset index id.
+        if (!isValidString(versionInfo.assets) && versionInfo.assetIndex != null
+                && isValidString(versionInfo.assetIndex.id)) {
+            versionInfo.assets = versionInfo.assetIndex.id;
+        }
+        // javaVersion is replaced by the compatibleJavaMajors list.
+        if (versionInfo.javaVersion == null && versionInfo.compatibleJavaMajors != null) {
+            int major = 0;
+            for (int candidate : versionInfo.compatibleJavaMajors) major = Math.max(major, candidate);
+            if (major > 0) {
+                JMinecraftVersionList.JavaVersionInfo javaVersionInfo = new JMinecraftVersionList.JavaVersionInfo();
+                javaVersionInfo.majorVersion = major;
+                versionInfo.javaVersion = javaVersionInfo;
+            }
+        }
+        synthesizeLwjglMarker(versionInfo);
+    }
+
+    /**
+     * Package-style metadata references LWJGL through "requires: org.lwjgl3" instead of listing
+     * it in libraries. Re-add the marker entry so SdlSupport's LWJGL version detection and the
+     * classpath filters (which skip org.lwjgl) keep working unchanged.
+     */
+    private static void synthesizeLwjglMarker(JMinecraftVersionList.Version versionInfo) {
+        if (versionInfo.requires == null) return;
+        String suggested = null;
+        for (JMinecraftVersionList.PackageRequirement requirement : versionInfo.requires) {
+            if (requirement != null && "org.lwjgl3".equals(requirement.uid) && isValidString(requirement.suggests)) {
+                suggested = requirement.suggests;
+                break;
+            }
+        }
+        if (!isValidString(suggested)) return;
+        DependentLibrary[] libraries = versionInfo.libraries;
+        if (libraries != null) {
+            for (DependentLibrary library : libraries) {
+                if (library != null && library.name != null && library.name.startsWith("org.lwjgl:lwjgl:")) {
+                    return; // already listed explicitly
+                }
+            }
+        }
+        DependentLibrary marker = new DependentLibrary();
+        marker.name = "org.lwjgl:lwjgl:" + suggested;
+        if (libraries == null) {
+            versionInfo.libraries = new DependentLibrary[]{marker};
+        } else {
+            DependentLibrary[] extended = Arrays.copyOf(libraries, libraries.length + 1);
+            extended[libraries.length] = marker;
+            versionInfo.libraries = extended;
+        }
     }
 
     public static void preProcessLibraries(DependentLibrary[] libraries) {
+        if (libraries == null) return;
         for (DependentLibrary libItem : libraries) {
-            String[] version = libItem.name.split(":")[2].split("\\.");
+            if (libItem == null || libItem.name == null) continue;
+            String[] nameSegments = libItem.name.split(":");
+            if (nameSegments.length < 3) continue;
+            String[] version = nameSegments[2].split("\\.");
+            int majorVersion, minorVersion;
+            try {
+                majorVersion = Integer.parseInt(version[0]);
+                minorVersion = version.length > 1 ? Integer.parseInt(version[1]) : 0;
+            } catch (NumberFormatException e) {
+                continue; // non-numeric (e.g. snapshot) version segment: nothing to rewrite
+            }
             if (libItem.name.startsWith("net.java.dev.jna:jna:")) {
                 // Special handling for LabyMod 1.8.9, Forge 1.12.2(?) and oshi
                 // we have libjnidispatch 5.13.0 in jniLibs directory
-                if (Integer.parseInt(version[0]) >= 5 && Integer.parseInt(version[1]) >= 13)
+                if (majorVersion >= 5 && minorVersion >= 13)
                     continue;
                 Logging.d(InfoDistributor.LAUNCHER_NAME, "Library " + libItem.name + " has been changed to version 5.13.0");
                 createLibraryInfo(libItem);
@@ -412,7 +556,7 @@ public final class Tools {
                 //if (Integer.parseInt(version[0]) >= 6 && Integer.parseInt(version[1]) >= 3) return;
                 // FIXME: ensure compatibility
 
-                if (Integer.parseInt(version[0]) != 6 || Integer.parseInt(version[1]) != 2)
+                if (majorVersion != 6 || minorVersion != 2)
                     continue;
                 Logging.d(InfoDistributor.LAUNCHER_NAME, "Library " + libItem.name + " has been changed to version 6.3.0");
                 createLibraryInfo(libItem);
@@ -424,7 +568,7 @@ public final class Tools {
                 // Early versions of the ASM library get repalced with 5.0.4 because Pojav's LWJGL is compiled for
                 // Java 8, which is not supported by old ASM versions. Mod loaders like Forge, which depend on this
                 // library, often include lwjgl in their class transformations, which causes errors with old ASM versions.
-                if (Integer.parseInt(version[0]) >= 5) continue;
+                if (majorVersion >= 5) continue;
                 Logging.d(InfoDistributor.LAUNCHER_NAME, "Library " + libItem.name + " has been changed to version 5.0.4");
                 createLibraryInfo(libItem);
                 libItem.name = "org.ow2.asm:asm-all:5.0.4";
@@ -443,8 +587,9 @@ public final class Tools {
 
     public static String[] generateLibClasspath(JMinecraftVersionList.Version info) {
         List<String> libDir = new ArrayList<>();
+        if (info.libraries == null) return new String[0];
         for (DependentLibrary libItem : info.libraries) {
-            if (!checkRules(libItem.rules)) continue;
+            if (!isLibraryEnabledForDevice(libItem)) continue;
 
             String libName = libItem.name;
             if (libName == null) continue;
@@ -472,6 +617,10 @@ public final class Tools {
     public static JMinecraftVersionList.Version getVersionInfo(Version version, boolean skipInheriting) {
         try {
             JMinecraftVersionList.Version customVer = Tools.GLOBAL_GSON.fromJson(read(new File(version.getVersionPath(), version.getVersionName() + ".json")), JMinecraftVersionList.Version.class);
+            if (customVer == null) {
+                throw new RuntimeException("Version JSON is empty for " + version.getVersionName());
+            }
+            Tools.normalizeVersionInfo(customVer, version.getVersionName());
             if (skipInheriting || customVer.inheritsFrom == null || customVer.inheritsFrom.equals(customVer.id)) {
                 preProcessLibraries(customVer.libraries);
             } else {
@@ -482,6 +631,10 @@ public final class Tools {
                 } catch (IOException e) {
                     throw new RuntimeException("Can't find the source version for " + version.getVersionName() + " (req version=" + customVer.inheritsFrom + ")");
                 }
+                if (inheritsVer == null) {
+                    throw new RuntimeException("Source version JSON is empty for " + customVer.inheritsFrom);
+                }
+                Tools.normalizeVersionInfo(inheritsVer, customVer.inheritsFrom);
                 //inheritsVer.inheritsFrom = inheritsVer.id;
                 insertSafety(inheritsVer, customVer,
                         "assetIndex", "assets", "id",
@@ -490,13 +643,17 @@ public final class Tools {
                 );
 
                 // Go through the libraries, remove the ones overridden by the custom version
+                if (inheritsVer.libraries == null) inheritsVer.libraries = new DependentLibrary[0];
+                if (customVer.libraries == null) customVer.libraries = new DependentLibrary[0];
                 List<DependentLibrary> inheritLibraryList = new ArrayList<>(Arrays.asList(inheritsVer.libraries));
                 outer_loop:
                 for(DependentLibrary library : customVer.libraries){
+                    if (library == null || library.name == null || !library.name.contains(":")) continue;
                     // Clean libraries overridden by the custom version
                     String libName = library.name.substring(0, library.name.lastIndexOf(":"));
 
                     for(DependentLibrary inheritLibrary : inheritLibraryList) {
+                        if (inheritLibrary == null || inheritLibrary.name == null || !inheritLibrary.name.contains(":")) continue;
                         String inheritLibName = inheritLibrary.name.substring(0, inheritLibrary.name.lastIndexOf(":"));
 
                         if(libName.equals(inheritLibName)){

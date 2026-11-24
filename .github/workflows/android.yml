@@ -126,19 +126,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Fetch user screenshot blob
-        env:
-          GH_TOKEN: ${{ github.token }}
-          IMG_URL: 'https://cdn.discordapp.com/attachments/1574634170410467468/1574695114859618335/rn_image_picker_lib_temp_2e0a6722-449b-43c3-90d3-2230a5f4e8d4.png?ex=6b06949b&is=6b05431b&hm=44e8bd90135f70c834621d2361fbbc71b3bee435b7471408e5561733d331d56e&'
-        run: |
-          curl -fsSL "$IMG_URL" -o "$RUNNER_TEMP/user_img.png"
-          python3 - "$RUNNER_TEMP/user_img.png" <<'PY'
-          import base64, json, os, subprocess, sys
-          data = open(sys.argv[1], "rb").read()
-          payload = json.dumps({"content": base64.b64encode(data).decode("ascii"), "encoding": "base64"}).encode("utf-8")
-          res = subprocess.check_output(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/git/blobs", "--method", "POST", "--input", "-"], input=payload)
-          print("::notice title=USER_SCREENSHOT_BLOB::" + json.loads(res)["sha"])
-          PY
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
         with:

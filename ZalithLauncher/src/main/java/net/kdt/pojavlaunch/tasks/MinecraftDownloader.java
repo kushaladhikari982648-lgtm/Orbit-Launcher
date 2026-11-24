@@ -183,7 +183,21 @@ public class MinecraftDownloader {
         NativesExtractor nativesExtractor = new NativesExtractor(targetDirectory);
         int extractedCount = 0;
         for(File source : mDeclaredNatives) {
-            nativesExtractor.extractFromAar(source);
+            // Extraction is best-effort: the JNI libraries the game actually needs are also
+            // bundled in the APK (jniLibs/<abi>), so a missing/corrupt optional archive must
+            // not fail the whole download — that used to surface as
+            // "Failed to download Minecraft!" on launch.
+            if (source.isFile() && source.length() > 0) {
+                try {
+                    nativesExtractor.extractFromAar(source);
+                } catch (IOException | RuntimeException e) {
+                    Logging.w("NewMCDownloader", "Failed to extract native libraries from "
+                            + source.getName() + "; using the APK's bundled libraries instead", e);
+                }
+            } else {
+                Logging.w("NewMCDownloader", "Native archive " + source.getName()
+                        + " is missing; using the APK's bundled libraries instead");
+            }
             extractedCount++;
             ProgressLayout.setProgress(ProgressLayout.DOWNLOAD_MINECRAFT, extractedCount * 100 / totalCount,
                     R.string.newdl_extracting_native_libraries, extractedCount, totalCount);
@@ -237,14 +251,36 @@ public class MinecraftDownloader {
      * @throws IOException if the download of any of the metadata files fails
      */
     private void downloadAndProcessMetadata(JMinecraftVersionList.Version verInfo, String versionName) throws IOException, MirrorTamperedException {
+        // Resolve the version through every source we have before giving up: the caller's
+        // (possibly null) entry, the sticky event, the cached manifest, then a fresh manifest
+        // download. A stale/absent version list must not abort an otherwise healthy install.
+        if (verInfo == null) verInfo = AsyncMinecraftDownloader.getListedVersion(versionName);
+        if (verInfo == null) verInfo = AsyncMinecraftDownloader.getCachedListedVersion(versionName);
+        if (verInfo == null) verInfo = AsyncMinecraftDownloader.fetchListedVersion(versionName);
+
         File versionJsonFile;
-        if(verInfo != null) versionJsonFile = downloadGameJson(verInfo);
+        if (verInfo != null) versionJsonFile = downloadGameJson(verInfo);
         else versionJsonFile = createGameJsonPath(versionName);
-        if(versionJsonFile.canRead())  {
-            verInfo = Tools.GLOBAL_GSON.fromJson(Tools.read(versionJsonFile), JMinecraftVersionList.Version.class);
-        } else {
-            throw new IOException("Unable to read Version JSON for version " + versionName);
+
+        JMinecraftVersionList.Version parsedVersion = null;
+        if (versionJsonFile.canRead() && versionJsonFile.length() > 0) {
+            try {
+                parsedVersion = Tools.GLOBAL_GSON.fromJson(Tools.read(versionJsonFile), JMinecraftVersionList.Version.class);
+            } catch (Exception e) {
+                Logging.w("NewMCDownloader", "Version JSON for " + versionName + " is corrupted", e);
+            }
         }
+        if (parsedVersion == null || (parsedVersion.mainClass == null && parsedVersion.libraries == null
+                && !Tools.isValidString(parsedVersion.inheritsFrom) && parsedVersion.assetIndex == null)) {
+            // "{}"-style parses produce an all-null object; minimal wrapper JSONs with only
+            // inheritsFrom are still valid and continue through the recursion below.
+            throw new IOException("Unable to read Version JSON for version " + versionName
+                    + " (missing, empty or corrupted, and it could not be re-downloaded."
+                    + " Check the network connection and try again)");
+        }
+        verInfo = parsedVersion;
+        // Support both the classic per-version JSON and package-style (formatVersion 2) files.
+        Tools.normalizeVersionInfo(verInfo, versionName);
 
         JAssets assets = downloadAssetsIndex(verInfo);
         if(assets != null) scheduleAssetDownloads(assets);
@@ -257,7 +293,7 @@ public class MinecraftDownloader {
 
         if(Tools.isValidString(verInfo.inheritsFrom)) {
             JMinecraftVersionList.Version inheritedVersion = AsyncMinecraftDownloader.getListedVersion(verInfo.inheritsFrom);
-            // Infinite inheritance !?! :noway:
+            // Infinite inheritance !?! :noway: (the recursive call re-resolves null entries too)
             downloadAndProcessMetadata(inheritedVersion, verInfo.inheritsFrom);
         }
     }
@@ -305,16 +341,41 @@ public class MinecraftDownloader {
         String path = FileUtils.removeExtension(libArtifactPath) + ".aar";
         String downloadUrl = baseRepository + path;
         File targetPath = new File(ProfilePathHome.getLibrariesHome(), path);
+        // An empty or truncated .aar left behind by an interrupted earlier run would otherwise be
+        // accepted as-is (no SHA1 is known when the .sha1 sidecar cannot be fetched). Delete it
+        // so the downloader fetches a fresh, complete archive.
+        if (targetPath.isFile() && targetPath.length() > 0 && !isZipArchive(targetPath)) {
+            Logging.w("NewMCDownloader", "Removing corrupted native archive " + targetPath.getName());
+            targetPath.delete();
+        }
         mDeclaredNatives.add(targetPath);
         scheduleDownload(targetPath, DownloadMirror.DOWNLOAD_CLASS_LIBRARIES, downloadUrl, null, 0, true);
+    }
+
+    private static boolean isZipArchive(File file) {
+        try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(file)) {
+            zipFile.entries();
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private void scheduleLibraryDownloads(DependentLibrary[] dependentLibraries) throws IOException {
         Tools.preProcessLibraries(dependentLibraries);
         growDownloadList(dependentLibraries.length);
         for(DependentLibrary dependentLibrary : dependentLibraries) {
+            if (dependentLibrary == null || dependentLibrary.name == null) continue;
             // Don't download lwjgl, we have our own bundled in.
             if(dependentLibrary.name.startsWith("org.lwjgl")) continue;
+            // Skip libraries that cannot run here: desktop-OS-only rules (macOS/Windows jars)
+            // and classifiers for a different CPU (e.g. linux-x86_64 netty natives on ARM).
+            // Downloading them was pure waste and every extra file was another chance for the
+            // whole download to fail.
+            if (!Tools.isLibraryEnabledForDevice(dependentLibrary)) {
+                Logging.i("NewMCDownloader", "Skipped library " + dependentLibrary.name + " (unusable on this device)");
+                continue;
+            }
             // Special handling for JNA Android natives
             if(dependentLibrary.name.startsWith("net.java.dev.jna:jna:")) {
                 scheduleNativeLibraryDownload(MAVEN_CENTRAL_REPO1, dependentLibrary);
@@ -499,6 +560,15 @@ public class MinecraftDownloader {
                 });
             }catch (Exception e) {
                 if(!mSkipIfFailed) throw e;
+                // Don't leave a partially written file behind: without a SHA1 it would be
+                // mistaken for a valid download on every following run (the JNA .aar used to
+                // end up this way and then crashed natives extraction).
+                if (mTargetPath.exists() && !mTargetPath.delete()) {
+                    Logging.w("MinecraftDownloader", "Could not delete partial download "
+                            + mTargetPath.getName(), e);
+                }
+                Logging.i("MinecraftDownloader", "Optional download failed, continuing: "
+                        + mTargetUrl + " (" + e + ")");
             }
             mProcessedFileCounter.incrementAndGet();
         }

@@ -2,9 +2,12 @@ package net.kdt.pojavlaunch;
 
 import androidx.annotation.Keep;
 
+import com.google.gson.annotations.SerializedName;
+
 import net.kdt.pojavlaunch.value.DependentLibrary;
 import net.kdt.pojavlaunch.value.MinecraftClientInfo;
 
+import java.util.List;
 import java.util.Map;
 
 @Keep
@@ -36,6 +39,25 @@ public class JMinecraftVersionList {
         public String releaseTime;
         public String time;
         public String type;
+
+        // ---- Package-style metadata (formatVersion 2, e.g. Prism/Mojang package manifests) ----
+        // Those files carry the version id in "version", the client jar under "mainJar", the
+        // required Java in "compatibleJavaMajors" and LWJGL in a separate "requires" package.
+        // Tools.normalizeVersionInfo() folds all of this back into the classic fields above so
+        // the downloader and the launcher can treat both formats identically.
+        public String version;
+        public DependentLibrary mainJar;
+        public int[] compatibleJavaMajors;
+        @SerializedName("+jvmArgs")
+        public String[] plusJvmArgs;
+        public List<PackageRequirement> requires;
+    }
+
+    /** A reference to another metadata package, from the "requires" array of package-style files. */
+    @Keep
+    public static class PackageRequirement {
+        public String uid;
+        public String suggests;
     }
     @Keep
     public static class JavaVersionInfo {
