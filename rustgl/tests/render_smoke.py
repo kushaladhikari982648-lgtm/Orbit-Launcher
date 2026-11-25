@@ -103,13 +103,20 @@ fixture_count = 0
 for match in re.finditer(r'const (\w+): &str = r(#?)"(.*?)"\2;', fixtures, re.S):
     fixture_count += 1
     name, _, text = match.groups()
+    if limited_es30 and '_CSH' in name:
+        # GLES 3.0 has no compute stage: the driver rejects glCreateShader(
+        # GL_COMPUTE_SHADER) with INVALID_ENUM before any translation runs, so
+        # there is no shader object to compile through the bridge. The
+        # translator's 3.0 rejection is pinned by the cargo fixtures
+        # (translate(MC26_COMPUTE_CSH).is_err()).
+        print(f'SKIP: GLES 3.0 has no compute stage: {name}', flush=True)
+        continue
     # Fixture names carry the stage suffix; the smoke test compiles the exact translated
     # source through the exported GL entry points, including compute on GLES 3.1+.
     stage = 0x91B9 if '_CSH' in name else (0x8B31 if '_VSH' in name else 0x8B30)
-    # ES 3.0 lacks texture buffers and cannot compile compute shaders at all. A deliberate,
-    # logged compile failure is the contract, not an empty shader that makes Minecraft
-    # silently render black.
-    expected = not (limited_es30 and (name == 'MC_MODERN_VSH_BUFFER' or '_CSH' in name))
+    # ES 3.0 lacks texture buffers. A deliberate, logged compile failure is the
+    # contract, not an empty shader that makes Minecraft silently render black.
+    expected = not (limited_es30 and name == 'MC_MODERN_VSH_BUFFER')
     shader = compile_src(text, stage, name, expected)
     delete_shader(shader)
     print(f'PASS: GLES {"compile" if expected else "explicit capability rejection"} {name}', flush=True)
