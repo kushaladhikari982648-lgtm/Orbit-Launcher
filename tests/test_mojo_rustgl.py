@@ -65,8 +65,8 @@ class MojoRustGLTests(unittest.TestCase):
     def test_fps_and_rustgl_gurkha14_optimizations(self):
         import json
         lock = json.loads((ROOT / 'tools/rustgl-lock.json').read_text())
-        self.assertEqual(lock['commit'], 'aa3fa35cf5a2144ae64bea4b438ce3abe9507c52')
-        self.assertEqual(lock['version'], '0.3.0-gurkha.14')
+        self.assertEqual(lock['commit'], '2b40467bb4b149343487bc6f27083312e48d5b34')
+        self.assertEqual(lock['version'], '0.3.0-gurkha.15')
 
         shader_lib = (ROOT / 'rustgl/crates/shader-translate/src/lib.rs').read_text()
         self.assertIn('fn legalize_output_arrays', shader_lib)

@@ -103,16 +103,17 @@ fixture_count = 0
 for match in re.finditer(r'const (\w+): &str = r(#?)"(.*?)"\2;', fixtures, re.S):
     fixture_count += 1
     name, _, text = match.groups()
-    # A fixture whose name carries _VSH is a vertex shader; everything else is a fragment
-    # shader. (The suffix is part of the contract with the fixture file.)
-    stage = 0x8B31 if '_VSH' in name else 0x8B30
-    # ES 3.0 lacks texture buffers. A deliberate, logged compile failure is the
-    # contract, not an empty shader that makes Minecraft silently render black.
-    expected = not (limited_es30 and name == 'MC_MODERN_VSH_BUFFER')
+    # Fixture names carry the stage suffix; the smoke test compiles the exact translated
+    # source through the exported GL entry points, including compute on GLES 3.1+.
+    stage = 0x91B9 if '_CSH' in name else (0x8B31 if '_VSH' in name else 0x8B30)
+    # ES 3.0 lacks texture buffers and cannot compile compute shaders at all. A deliberate,
+    # logged compile failure is the contract, not an empty shader that makes Minecraft
+    # silently render black.
+    expected = not (limited_es30 and (name == 'MC_MODERN_VSH_BUFFER' or '_CSH' in name))
     shader = compile_src(text, stage, name, expected)
     delete_shader(shader)
     print(f'PASS: GLES {"compile" if expected else "explicit capability rejection"} {name}', flush=True)
-assert fixture_count == 23, f'Expected all 23 shader fixtures, found {fixture_count}'
+assert fixture_count == 24, f'Expected all 24 shader fixtures, found {fixture_count}'
 shader = compile_src('#version 330\nvoid main(){ EmitVertex(); }', 0x8B31,
                      'unsupported stage must fail instead of becoming a blank shader', False)
 delete_shader(shader)

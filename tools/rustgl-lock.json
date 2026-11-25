@@ -1,12 +1,13 @@
 {
-  "repository": "kushaladhikari982648-lgtm/RustGL-for-Gurkha-launcher",
+  "repository": "kushaladhikari982648-lgtm/RustGL",
   "branch": "arena/37ea4942-rustgl-for-gurkha-launcher",
-  "commit": "aa3fa35cf5a2144ae64bea4b438ce3abe9507c52",
-  "version": "0.3.0-gurkha.14",
+  "commit": "2b40467bb4b149343487bc6f27083312e48d5b34",
+  "version": "0.3.0-gurkha.15",
   "original": "whaltermc/rust-renderer@eb22559581cf400af29470205a9ebbff31e0db33",
   "local_changes": [
     "Per-thread driver entry-point cache with context generation invalidation, L1 pointer cache, and per-function gl_passthrough! atomic cache.",
     "GLES 3.0 negative-capability smoke mode asserts texture-buffer rejection; full modern probes remain required on 3.1/3.2.",
-    "MC 26.3 OIT fragment shader array-output legalization (legalize_output_arrays) and lock-free GL/EGL/DSA hot-path dispatch."
+    "MC 26.3 OIT fragment shader array-output legalization (legalize_output_arrays, 2D output arrays flattened to 1D) and lock-free GL/EGL/DSA hot-path dispatch.",
+    "Compute shaders translate to ESSL 310/320 when the driver reports GLES 3.1/3.2 (clear unsupported-feature error on 3.0); legalized fragment outputs flush before inline and bare return statements and the translation cache keys on the measured GLES version."
   ]
 }
