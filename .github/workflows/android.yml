@@ -315,6 +315,41 @@ jobs:
               ])
           rel = json.loads(subprocess.check_output(["gh", "release", "view", tag, "--json", "id,url,tagName,name,isPrerelease,isDraft,assets"], text=True))
           print("::notice title=PUBLISHED_RELEASE_103::" + json.dumps(rel))
+
+          # Also refresh the full (non-prerelease) "<version>" release so its APKs always
+          # carry the plain "Orbit Launcher <version>.apk" names. Its notes live in
+          # .github/release-notes/<version>.md and are never touched here.
+          full_tag = version
+          full_notes = f".github/release-notes/{full_tag}.md"
+          if not pathlib.Path(full_notes).is_file():
+              print(f"Skipping {full_tag}: no {full_notes}")
+          else:
+              view = subprocess.run(["gh", "release", "view", full_tag], capture_output=True, text=True)
+              if view.returncode == 0:
+                  subprocess.check_call([
+                      "gh", "release", "upload", full_tag,
+                      f"{out}/Orbit Launcher {version}.apk",
+                      f"{out}/Orbit Launcher {version} (32-bit).apk",
+                      f"{out}/BUILD_INFO.json",
+                      f"{out}/SHA256SUMS.txt",
+                      "--clobber",
+                  ])
+              else:
+                  subprocess.check_call([
+                      "gh", "release", "create", full_tag,
+                      f"{out}/Orbit Launcher {version}.apk",
+                      f"{out}/Orbit Launcher {version} (32-bit).apk",
+                      f"{out}/BUILD_INFO.json",
+                      f"{out}/SHA256SUMS.txt",
+                      "--target", os.environ["GITHUB_SHA"],
+                      "--title", f"Orbit Launcher {version}",
+                      "--notes-file", full_notes,
+                  ])
+              full = json.loads(subprocess.check_output(
+                  ["gh", "release", "view", full_tag, "--json", "id,url,tagName,name,isPrerelease,isDraft,assets"],
+                  text=True,
+              ))
+              print("::notice title=PUBLISHED_RELEASE_103_FULL::" + json.dumps(full))
           PY
 
   LwjglApiChecks:
