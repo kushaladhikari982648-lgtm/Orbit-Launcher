@@ -14,6 +14,9 @@
 - **Download reliability (`Failed to download Minecraft!` regression)**:
   - Downloads now use connect **and** read timeouts, reject non-200 responses (429/5xx error pages are no longer saved as file content), retry transient failures with backoff in both hashed and no-hash paths, and delete partial files instead of trusting them.
   - Default max download threads lowered from 64 to 16 so mobile NAT/CDN budgets are not saturated into connection resets (still configurable in Settings).
+- **Modpack installs no longer end in an "invalid version"**:
+  - Failures that used to abort silently (manifest verification, unsupported or absent mod loader — including Quilt on CurseForge) now show the real reason, and the incomplete version folder is removed instead of lingering as a version the launcher only offers to delete.
+  - Modrinth downloads pick the version's primary file instead of blindly taking the first one, so extra files (changelogs etc.) can no longer be downloaded in place of the pack.
 - **Portrait layouts no longer smushed**:
   - Added portrait variants for Settings (category strip above the pager instead of a `144dp` side rail), Version Manager, Controller Remapper, Download (category strip above content), and the Mod/Resource download screens (action panels become bottom sheets).
 - **LWJGL Mapping, Native Loading & Runtime Overhead Hardening**:
@@ -22,5 +25,5 @@
   - Eliminated per-event allocations, unbounded `stdio_is.c` line buffering, and background Discord RPC / memory-polling overhead when backgrounded or hidden.
 
 ### Packages Included (ARM 32-bit & 64-bit Only)
-- `OrbitLauncher-1.0.3-debug-arm64-v8a.apk` — 64-bit ARM (`arm64-v8a`)
-- `OrbitLauncher-1.0.3-debug-armeabi-v7a.apk` — 32-bit ARM (`armeabi-v7a`)
+- `Orbit Launcher 1.0.3.apk` — 64-bit ARM (`arm64-v8a`)
+- `Orbit Launcher 1.0.3 (32-bit).apk` — 32-bit ARM (`armeabi-v7a`)

@@ -45,8 +45,14 @@ class CurseForgeModPackInstallHelper {
                     CurseManifest::class.java
                 )
                 if (!ModPackUtils.verifyManifest(curseManifest)) {
+                    // Throwing (instead of returning null) surfaces the failure: a null
+                    // here used to abort the install silently and leave a version folder
+                    // without a JSON file, which the version list only offers to delete.
                     Logging.i("CurseForgeModPackInstallHelper", "manifest verification failed")
-                    return null
+                    throw IOException(
+                        "The downloaded file failed CurseForge modpack verification — " +
+                            "it is not a valid modpack archive"
+                    )
                 }
                 var progressUpdateTime = 0L
                 val speedCalculator = SpeedCalculator()
@@ -102,7 +108,7 @@ class CurseForgeModPackInstallHelper {
             return modDownloader
         }
 
-        private fun createInfo(minecraft: CurseMinecraft): ModLoaderWrapper? {
+        private fun createInfo(minecraft: CurseMinecraft): ModLoaderWrapper {
             var primaryModLoader: CurseModLoader? = null
             for (modLoader in minecraft.modLoaders) {
                 if (modLoader.primary) {
@@ -113,26 +119,36 @@ class CurseForgeModPackInstallHelper {
             if (primaryModLoader == null) primaryModLoader = minecraft.modLoaders[0]
             val modLoaderId = primaryModLoader!!.id
             val dashIndex = modLoaderId.indexOf('-')
+            if (dashIndex <= 0) throw IOException("Invalid mod loader id in modpack manifest: $modLoaderId")
             val modLoaderName = modLoaderId.substring(0, dashIndex)
             val modLoaderVersion = modLoaderId.substring(dashIndex + 1)
             Logging.i("CurseForgeModPackInstallHelper",
                 StringUtils.insertSpace(modLoaderId, modLoaderName, modLoaderVersion)
             )
-            val modloader: ModLoader
-            when (modLoaderName) {
+            // A null here used to end the install silently: the mods were downloaded but
+            // no mod loader step ran, so the version never got its JSON file and the
+            // version list called it invalid. Quilt used to fall into this hole.
+            val modloader: ModLoader = when (modLoaderName) {
                 "forge" -> {
                     Logging.i("ModLoader", "Forge, or Quilt? ...")
-                    modloader = ModLoader.FORGE
+                    ModLoader.FORGE
                 }
                 "neoforge" -> {
                     Logging.i("ModLoader", "NeoForge")
-                    modloader = ModLoader.NEOFORGE
+                    ModLoader.NEOFORGE
                 }
                 "fabric" -> {
                     Logging.i("ModLoader", "Fabric")
-                    modloader = ModLoader.FABRIC
+                    ModLoader.FABRIC
                 }
-                else -> return null
+                "quilt" -> {
+                    Logging.i("ModLoader", "Quilt")
+                    ModLoader.QUILT
+                }
+                else -> throw IOException(
+                    "Unsupported mod loader \"$modLoaderName\" in the modpack manifest " +
+                        "(supported: Forge, NeoForge, Fabric, Quilt)"
+                )
             }
             return ModLoaderWrapper(modloader, modLoaderVersion, minecraft.version)
         }

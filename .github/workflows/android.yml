@@ -275,7 +275,12 @@ jobs:
               with zipfile.ZipFile(apk) as zf:
                   actual_abis = {n.split("/")[1] for n in zf.namelist() if n.startswith("lib/") and n.endswith(".so")}
                   assert actual_abis == wanted_abi, f"ABI mismatch for {arch}: {actual_abis} != {wanted_abi}"
-              dest = out / f"OrbitLauncher-{version}-debug-{suffix}.apk"
+              # Release-facing names: no "debug" in them. 64-bit carries the plain
+              # "Orbit Launcher <version>.apk" name; 32-bit is disambiguated.
+              if arch == "arm64":
+                  dest = out / f"Orbit Launcher {version}.apk"
+              else:
+                  dest = out / f"Orbit Launcher {version} (32-bit).apk"
               shutil.copyfile(apk, dest)
               sha = hashlib.sha256(dest.read_bytes()).hexdigest()
               records.append({"file": dest.name, "arch": arch, "abi": suffix, "bytes": dest.stat().st_size, "sha256": sha})

@@ -178,7 +178,14 @@ class ModrinthCommonUtils {
             for (element in response) {
                 try {
                     val versionObject = element.asJsonObject
-                    val filesJsonObject: JsonObject = versionObject.getAsJsonArray("files").get(0).asJsonObject
+                    val filesArray = versionObject.getAsJsonArray("files")
+                    // Prefer the file marked "primary" — a version can carry extra files
+                    // (changelogs, extras) and blindly taking files[0] downloaded the wrong
+                    // file, which then failed every later step of the install.
+                    val filesJsonObject: JsonObject = (0 until filesArray.size())
+                        .map { filesArray[it].asJsonObject }
+                        .firstOrNull { it.has("primary") && it.get("primary").isJsonPrimitive && it.get("primary").asBoolean }
+                        ?: filesArray[0].asJsonObject
 
                     items.add(createItem(versionObject, filesJsonObject, invalidDependencies))
                 } catch (e: Exception) {

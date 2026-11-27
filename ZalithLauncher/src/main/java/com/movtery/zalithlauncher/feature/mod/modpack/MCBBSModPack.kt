@@ -34,8 +34,14 @@ class MCBBSModPack(private val context: Context, private val zipFile: File?) {
                     MCBBSPackMeta::class.java
                 )
                 if (!ModPackUtils.verifyMCBBSPackMeta(mcbbsPackMeta)) {
+                    // Throwing (instead of returning null) surfaces the failure: a null
+                    // here used to abort the install silently and leave a version folder
+                    // without a JSON file, which the version list only offers to delete.
                     Logging.i("MCBBSModPack", "manifest verification failed")
-                    return null
+                    throw IOException(
+                        "The downloaded file failed MCBBS modpack verification — " +
+                            "it is not a valid modpack archive"
+                    )
                 }
 
                 initDialog()
@@ -114,26 +120,31 @@ class MCBBSModPack(private val context: Context, private val zipFile: File?) {
         org.apache.commons.io.FileUtils.deleteQuietly(instanceDestination)
     }
 
-    private fun createInfo(addons: Array<MCBBSAddons?>): ModLoaderWrapper? {
+    private fun createInfo(addons: Array<MCBBSAddons?>): ModLoaderWrapper {
         var version = ""
         var modLoader = ""
         var modLoaderVersion = ""
-        for (i in 0..addons.size) {
-            if (addons[i]!!.id == "game") {
-                version = addons[i]!!.version
+        // "until" (not ".."): the old inclusive range read addons[size] and crashed.
+        for (i in 0 until addons.size) {
+            val addon = addons[i] ?: continue
+            if (addon.id == "game") {
+                version = addon.version
                 continue
             }
-            if (addons[i] != null) {
-                modLoader = addons[i]!!.id
-                modLoaderVersion = addons[i]!!.version
-                break
-            }
+            modLoader = addon.id
+            modLoaderVersion = addon.version
+            break
         }
+        // Returning null here used to end the install silently: mods were extracted
+        // but no version JSON was ever written, so the version list called it invalid.
         val modloader = when (modLoader) {
             "forge" -> ModLoader.FORGE
             "neoforge" -> ModLoader.NEOFORGE
             "fabric" -> ModLoader.FABRIC
-            else -> return null
+            else -> throw IOException(
+                "Unsupported mod loader \"$modLoader\" in the modpack manifest " +
+                    "(supported: Forge, NeoForge, Fabric)"
+            )
         }
         return ModLoaderWrapper(modloader, modLoaderVersion, version)
     }

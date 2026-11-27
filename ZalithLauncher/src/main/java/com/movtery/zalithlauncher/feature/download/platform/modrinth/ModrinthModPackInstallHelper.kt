@@ -14,6 +14,7 @@ import net.kdt.pojavlaunch.modloaders.modpacks.models.ModrinthIndex
 import net.kdt.pojavlaunch.progresskeeper.DownloaderProgressWrapper
 import net.kdt.pojavlaunch.utils.ZipUtils
 import java.io.File
+import java.io.IOException
 import java.util.zip.ZipFile
 
 class ModrinthModPackInstallHelper {
@@ -33,8 +34,14 @@ class ModrinthModPackInstallHelper {
                     ModrinthIndex::class.java
                 )
                 if (!verifyModrinthIndex(modrinthIndex)) {
+                    // Throwing (instead of returning null) surfaces the failure: a null
+                    // here used to abort the install silently and leave a version folder
+                    // without a JSON file, which the version list only offers to delete.
                     Logging.i("ModrinthModPackInstallHelper", "manifest verification failed")
-                    return null
+                    throw IOException(
+                        "The downloaded file failed Modrinth modpack verification — " +
+                            "it is not a valid .mrpack archive"
+                    )
                 }
                 val modDownloader = ModDownloader(targetPath)
                 for (indexFile in modrinthIndex.files) {
@@ -65,10 +72,11 @@ class ModrinthModPackInstallHelper {
             }
         }
 
-        private fun createInfo(modrinthIndex: ModrinthIndex?): ModLoaderWrapper? {
-            if (modrinthIndex == null) return null
+        private fun createInfo(modrinthIndex: ModrinthIndex): ModLoaderWrapper {
             val dependencies = modrinthIndex.dependencies
-            val mcVersion = dependencies["minecraft"] ?: return null
+                ?: throw IOException("modrinth.index.json has no dependencies section")
+            val mcVersion = dependencies["minecraft"]
+                ?: throw IOException("modrinth.index.json does not declare a Minecraft version")
             dependencies["forge"]?.let {
                 Logging.i("ModLoader", "Forge")
                 return ModLoaderWrapper(ModLoader.FORGE, it, mcVersion)
@@ -85,7 +93,12 @@ class ModrinthModPackInstallHelper {
                 Logging.i("ModLoader", "Quilt")
                 return ModLoaderWrapper(ModLoader.QUILT, it, mcVersion)
             }
-            return null
+            // Returning null here used to end the install silently: mods were downloaded
+            // but no version JSON was ever written, so the version list called it invalid.
+            throw IOException(
+                "The modpack declares no supported mod loader " +
+                    "(supported: Forge, NeoForge, Fabric, Quilt)"
+            )
         }
     }
 }

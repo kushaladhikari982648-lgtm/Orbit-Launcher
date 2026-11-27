@@ -6,6 +6,7 @@ import com.movtery.zalithlauncher.utils.LauncherProfiles
 import com.movtery.zalithlauncher.feature.download.item.ModLoaderWrapper
 import com.movtery.zalithlauncher.feature.log.Logging
 import com.movtery.zalithlauncher.feature.mod.models.MCBBSPackMeta
+import com.movtery.zalithlauncher.feature.version.VersionsManager
 import com.movtery.zalithlauncher.utils.runtime.SelectRuntimeUtils
 import net.kdt.pojavlaunch.JavaGUILauncherActivity
 import net.kdt.pojavlaunch.Tools
@@ -90,6 +91,20 @@ class ModPackUtils {
                     installIntent.putExtra(JavaGUILauncherActivity.EXTRAS_JRE_NAME, jreName)
                     activity.startActivity(installIntent)
                 }
+            }
+        }
+
+        /**
+         * A failed modpack install must not leave a half-created version behind: the version
+         * list would show it as invalid and only offer to delete it. Removes the version
+         * folder when — and only when — its JSON file was never written.
+         */
+        @JvmStatic
+        fun cleanupInvalidVersion(customName: String) {
+            val versionPath = VersionsManager.getVersionPath(customName)
+            if (!File(versionPath, "$customName.json").exists()) {
+                org.apache.commons.io.FileUtils.deleteQuietly(versionPath)
+                Logging.i("ModPackUtils", "Removed incomplete modpack version: $customName")
             }
         }
     }

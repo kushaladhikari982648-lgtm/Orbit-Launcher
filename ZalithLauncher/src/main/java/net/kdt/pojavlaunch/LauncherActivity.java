@@ -305,7 +305,18 @@ public class LauncherActivity extends BaseActivity {
                                 throw new RuntimeException(e);
                             }
                         }
-                    }).onThrowable(TaskExecutors.getAndroidUI(), e -> Tools.showErrorRemote(this, R.string.modpack_install_download_failed, e))
+                    }).onThrowable(TaskExecutors.getAndroidUI(), e -> {
+                        // Never leave a JSON-less version behind (the version list would only
+                        // offer to delete it), and surface the real failure reason.
+                        ModPackUtils.cleanupInvalidVersion(customName);
+                        StringBuilder detail = new StringBuilder();
+                        for (Throwable t = e; t != null && t.getMessage() != null; t = t.getCause()) {
+                            if (detail.length() == 0) detail.append(t.getMessage());
+                            else if (!detail.toString().contains(t.getMessage())) detail.append(": ").append(t.getMessage());
+                        }
+                        Tools.showErrorRemote(getString(R.string.modpack_install_download_failed)
+                                + (detail.length() > 0 ? "\n\n" + detail : ""), e);
+                    })
                     .finallyTask(TaskExecutors.getAndroidUI(), () -> ProgressLayout.clearProgress(ProgressLayout.INSTALL_RESOURCE))
                     .execute();
 

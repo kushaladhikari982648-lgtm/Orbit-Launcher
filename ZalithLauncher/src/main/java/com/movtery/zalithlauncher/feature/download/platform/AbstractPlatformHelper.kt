@@ -121,7 +121,18 @@ abstract class AbstractPlatformHelper(val api: ApiHandler) {
                                         ModPackUtils.startModLoaderInstall(it.first, ContextExecutor.getActivity(), it.second, customName)
                                     }
                                 }.onThrowable { e ->
-                                    Tools.showErrorRemote(context, R.string.modpack_install_download_failed, e)
+                                    // Never leave a JSON-less version behind (it would only
+                                    // offer "delete this erroneous version"), and tell the
+                                    // user WHY the install failed instead of a bare message.
+                                    ModPackUtils.cleanupInvalidVersion(customName)
+                                    val detail = generateSequence(e) { cause -> cause.cause }
+                                        .mapNotNull { it.message }
+                                        .firstOrNull()
+                                    Tools.showErrorRemote(
+                                        context.getString(R.string.modpack_install_download_failed) +
+                                            (detail?.let { "\n\n$it" } ?: ""),
+                                        e
+                                    )
                                 }.execute()
                             }
 
