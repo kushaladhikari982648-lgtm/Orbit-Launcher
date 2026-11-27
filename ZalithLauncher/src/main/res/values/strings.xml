@@ -500,7 +500,7 @@
     <string name="setting_download_source_title">Game Download Source</string>
     <string name="setting_download_source_desc">Choose a mirror download source instead of using the official download source</string>
     <string name="setting_max_download_threads_title">Max Download Threads</string>
-    <string name="setting_max_download_threads_desc">Maximum number of concurrent downloads when downloading multiple files simultaneously, but too many threads will cause launcher lag. 64 threads are sufficient!</string>
+    <string name="setting_max_download_threads_desc">Maximum number of concurrent downloads when downloading multiple files simultaneously. Too many threads cause launcher lag and connection resets on mobile networks; 16 is a safe default, raise it only on fast, stable connections.</string>
     <string name="setting_version_isolation_title">Version Isolation</string>
     <string name="setting_version_isolation_desc">Enable version isolation for the game version\nWhen disabled, the game path will be .minecraft/\nWhen enabled, the game path will change to .minecraft/versions/&lt;version name&gt;/</string>
     <string name="setting_version_custom_info_title">Custom Info</string>

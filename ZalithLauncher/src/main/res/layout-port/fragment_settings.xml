@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Portrait: the landscape rail (144dp) would squeeze the pager down to ~194dp on a
+     360dp-wide phone, so the category rail becomes a horizontal strip above the pager.
+     Every id kept identical to layout/fragment_settings.xml so FragmentSettingsBinding
+     and SettingsFragment (tabs + ViewPager2) work unchanged. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="4dp">
+
+    <LinearLayout
+        android:id="@+id/settings_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/mc_panel"
+        android:orientation="vertical"
+        android:padding="6dp">
+
+        <HorizontalScrollView
+            android:id="@+id/settings_tab_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fillViewport="true"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/settings_tab"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/tab_video"
+                    style="@style/ModernNav"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/setting_category_video"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/tab_control"
+                    style="@style/ModernNav"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/setting_category_control"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/tab_game"
+                    style="@style/ModernNav"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/setting_category_game"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/tab_launcher"
+                    style="@style/ModernNav"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/setting_category_launcher"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/tab_experimental"
+                    style="@style/ModernNav"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:text="@string/setting_category_experimental"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <TextView
+            android:id="@+id/settings_footer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingTop="4dp"
+            android:text="@string/mc_auto_saved"
+            android:textColor="@color/menu_bar_text"
+            android:textSize="9sp" />
+    </LinearLayout>
+
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/settings_viewpager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginHorizontal="2dp"
+        android:layout_marginVertical="6dp"
+        android:layout_weight="1"
+        android:background="@drawable/background_card"
+        android:padding="4dp" />
+
+</LinearLayout>

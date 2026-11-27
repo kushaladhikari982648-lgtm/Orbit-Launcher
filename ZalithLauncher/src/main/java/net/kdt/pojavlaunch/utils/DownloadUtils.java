@@ -75,24 +75,52 @@ public class DownloadUtils {
                                              Tools.DownloaderFeedback monitor) throws IOException {
         FileUtils.ensureParentDirectory(outputFile);
 
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlInput).openConnection();
-        conn.setReadTimeout(UrlManager.TIME_OUT.getFirst());
-        InputStream readStr = conn.getInputStream();
-        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-            int current;
-            int overall = 0;
-            int length = conn.getContentLength();
-
-            if (buffer == null) buffer = new byte[65535];
-
-            while ((current = readStr.read(buffer)) != -1) {
-                overall += current;
-                fos.write(buffer, 0, current);
-                monitor.updateProgress(overall, length);
+        // Use the shared connection factory: it applies the connect AND read timeouts
+        // (a raw openConnection() has no connect timeout, so a dead route could hang
+        // a pool thread indefinitely) plus the launcher's User-Agent.
+        HttpURLConnection conn = UrlManager.createHttpConnection(new URL(urlInput));
+        conn.setDoInput(true);
+        try {
+            conn.connect();
+            int responseCode = conn.getResponseCode();
+            // A mirror/CDN error page (429/5xx) must fail the attempt instead of being
+            // written to disk as if it were the file.
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                throw new IOException("Server returned HTTP " + responseCode + ": "
+                        + conn.getResponseMessage() + " (" + urlInput + ")");
             }
+            try (InputStream readStr = conn.getInputStream();
+                 FileOutputStream fos = new FileOutputStream(outputFile)) {
+                int current;
+                int overall = 0;
+                int length = conn.getContentLength();
+
+                if (buffer == null) buffer = new byte[65535];
+
+                while ((current = readStr.read(buffer)) != -1) {
+                    overall += current;
+                    fos.write(buffer, 0, current);
+                    monitor.updateProgress(overall, length);
+                }
+            } catch (SocketTimeoutException e) {
+                throw new IOException("Download timed out: " + urlInput, e);
+            }
+        } finally {
             conn.disconnect();
-        } catch (SocketTimeoutException e) {
-            throw new IOException("Download timed out: " + urlInput, e);
+        }
+    }
+
+    /**
+     * Pause briefly between download attempts so a transient reset is not retried
+     * into another immediate reset. Interrupting the worker (pool shutdown) aborts
+     * the retry loop instead of fighting the interrupt.
+     */
+    private static void sleepBeforeRetry(int attempt) throws IOException {
+        try {
+            Thread.sleep(200L * attempt);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Download interrupted", e);
         }
     }
 
@@ -150,7 +178,21 @@ public class DownloadUtils {
         if(sha1 == null) {
             // If the file exists and we don't know it's SHA1, don't try to redownload it.
             if(outputFile.exists()) return null;
-            else return downloadFile(downloadFunction);
+            // The no-hash path used to be a single attempt: one dropped connection
+            // aborted the whole game download. Retry like the hashed path, and never
+            // keep a partial file — without a hash it would be trusted as complete
+            // on every following run.
+            IOException lastFailure = null;
+            for (int attempt = 1; attempt <= 5; attempt++) {
+                try {
+                    return downloadFile(downloadFunction);
+                } catch (IOException e) {
+                    lastFailure = e;
+                    org.apache.commons.io.FileUtils.deleteQuietly(outputFile);
+                    if (attempt < 5) sleepBeforeRetry(attempt);
+                }
+            }
+            throw lastFailure;
         }
 
         int attempts = 0;
@@ -158,7 +200,16 @@ public class DownloadUtils {
         T result = null;
         while (attempts < 5 && !fileOkay){
             attempts++;
-            downloadFile(downloadFunction);
+            try {
+                downloadFile(downloadFunction);
+            } catch (IOException e) {
+                // Transient network failures (resets, timeouts, 5xx) are retried
+                // the same way hash mismatches are, instead of aborting the entire
+                // download on the first error.
+                if (attempts >= 5) throw e;
+                sleepBeforeRetry(attempts);
+                continue;
+            }
             fileOkay = verifyFile(outputFile, sha1);
         }
         if(!fileOkay) throw new SHA1VerificationException("SHA1 verifcation failed after 5 download attempts");

@@ -171,7 +171,10 @@ class AllSettings {
         val lowEndMode = BooleanSettingUnit("lowEndMode", DeviceMemory.isLowEnd)
 
         @JvmStatic
-        val maxDownloadThreads = IntSettingUnit("maxDownloadThreads", 64)
+        // 64 parallel connections saturated mobile NAT/CDN budgets and produced resets;
+        // 16 keeps the pipe full without hammering the source (raise it in settings if
+        // the network really takes more).
+        val maxDownloadThreads = IntSettingUnit("maxDownloadThreads", 16)
 
         @JvmStatic
         val launcherTheme = StringSettingUnit("launcherTheme", "system")

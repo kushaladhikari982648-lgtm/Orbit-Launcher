@@ -3473,6 +3473,14 @@ where
     }
 }
 
+/// The launcher's vsync policy: `FORCE_VSYNC=true` pins the swap interval to 1,
+/// every other case pins it to 0. Cached because the environment is set once,
+/// before the JVM starts.
+fn force_vsync() -> bool {
+    static FORCE: OnceLock<bool> = OnceLock::new();
+    *FORCE.get_or_init(|| std::env::var("FORCE_VSYNC").map(|v| v == "true").unwrap_or(false))
+}
+
 /// Makes a context current and drops every memoized entry point when the context changes.
 ///
 /// `eglGetProcAddress` may return context-specific pointers, so cached addresses from a
@@ -3494,8 +3502,20 @@ pub unsafe extern "C" fn eglMakeCurrent(
     match egl_sym::<F>(b"eglMakeCurrent\0") {
         Some(f) => {
             let r = f(dpy, draw, read, ctx);
-            if r != 0 && previous != ctx {
-                clear_driver_cache();
+            if r != 0 {
+                if previous != ctx {
+                    clear_driver_cache();
+                }
+                // The SDL backend never calls eglSwapInterval for us (the LTW front
+                // does it here; this front used to leave the EGL default of 1, which
+                // vsync-locked the game on every device). Apply the launcher policy
+                // on every successful make-current so the interval cannot go stale
+                // after a surface or context swap.
+                if let Some(swap) =
+                    egl_sym::<unsafe extern "C" fn(*mut c_void, i32) -> u32>(b"eglSwapInterval\0")
+                {
+                    swap(dpy, if force_vsync() { 1 } else { 0 });
+                }
             }
             return r;
         }
@@ -3554,7 +3574,18 @@ egl_export!(eglGetCurrentContext() -> *mut c_void);
 egl_export!(eglGetCurrentDisplay() -> *mut c_void);
 egl_export!(eglGetCurrentSurface(readdraw: i32) -> *mut c_void);
 egl_export!(eglQuerySurface(dpy: *mut c_void, surface: *mut c_void, attr: i32, value: *mut i32) -> u32);
-egl_export!(eglSwapInterval(dpy: *mut c_void, interval: i32) -> u32);
+/// The launcher policy owns the swap interval: FORCE_VSYNC pins it to 1, otherwise
+/// every request is clamped to 0 so neither the game nor a mod can quietly re-enable
+/// vsync (the LTW front behaves the same way).
+#[no_mangle]
+pub unsafe extern "C" fn eglSwapInterval(dpy: *mut c_void, _interval: i32) -> u32 {
+    type F = unsafe extern "C" fn(*mut c_void, i32) -> u32;
+    let interval: i32 = if force_vsync() { 1 } else { 0 };
+    match egl_sym::<F>(b"eglSwapInterval\0") {
+        Some(f) => f(dpy, interval),
+        None => 0,
+    }
+}
 egl_export!(eglQueryString(dpy: *mut c_void, name: i32) -> *const u8);
 egl_export!(eglGetError() -> u32);
 egl_export!(eglReleaseThread() -> u32);

@@ -28,6 +28,9 @@ int __android_log_print(int p, const char *tag, const char *fmt, ...) {
 void ANativeWindow_acquire(ANativeWindow *w) { assert(w && atomic_fetch_add(&w->refs,1)>=0); }
 void ANativeWindow_release(ANativeWindow *w) { assert(w && atomic_fetch_sub(&w->refs,1)>0); }
 int ANativeWindow_setBuffersGeometry(ANativeWindow *w,int x,int y,int f) { (void)x;(void)y;(void)f; assert(w && w->refs>0); return 0; }
+/* window_slot.c pokes the BufferQueue swap interval on publish; the real
+ * implementation lives in swap_interval_no_egl.c, which is not linked here. */
+void setNativeWindowSwapIntervalForced(ANativeWindow *w, int interval) { (void)w; (void)interval; }
 void *test_dlopen(const char *name,int flags) {
     ++opens; assert(flags & RTLD_NOW); assert(strcmp(name,"/verified/libltw.so")==0);
     return strcmp(mode,"missing-provider")==0 ? NULL : (void*)1;
